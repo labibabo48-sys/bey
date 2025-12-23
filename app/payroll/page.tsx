@@ -152,9 +152,20 @@ const calculateUserStats = (user: any, userRecords: any[], userSchedule: any, mo
     totalAdvances,
     totalDoublages,
     netSalary,
-    totalRetardMins
+    totalRetardMins,
+    formattedRetard: totalRetardMins >= 60 ? `${Math.floor(totalRetardMins / 60)}h ${totalRetardMins % 60}m` : `${totalRetardMins} min`
   };
 }
+
+const formatDuration = (mins: number) => {
+  if (!mins || mins <= 0) return "-";
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h > 0) {
+    return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  }
+  return `${m} min`;
+};
 
 export default function PayrollPage() {
   const [selectedMonth, setSelectedMonth] = useState(new Date())
@@ -941,7 +952,7 @@ export default function PayrollPage() {
                     )}
                     <div className="text-center">
                       <p className="text-[#6b5744]">Retards</p>
-                      <p className="font-bold text-amber-600">{p.totalRetardMins}m</p>
+                      <p className="font-bold text-amber-600">{p.formattedRetard}</p>
                     </div>
                   </div>
 
@@ -1098,7 +1109,7 @@ export default function PayrollPage() {
                         )}
                         {cell.record && cell.record.retard > 0 && (
                           <div className="absolute top-0.5 left-0.5 text-[8px] text-amber-600 font-bold">
-                            {cell.record.retard}m
+                            {formatDuration(cell.record.retard)}
                           </div>
                         )}
                       </>
@@ -1150,9 +1161,9 @@ export default function PayrollPage() {
                       </span>
                     </div>
                     <div className="flex justify-between items-center bg-white rounded-lg px-3 sm:px-4 py-2 sm:py-3 border border-[#c9b896]/50">
-                      <span className="text-[#3d2c1e] text-xs sm:text-sm">Retards (min)</span>
+                      <span className="text-[#3d2c1e] text-xs sm:text-sm">Retards (h, m)</span>
                       <span className="text-[#3d2c1e] font-bold text-sm sm:text-base lg:text-lg">
-                        {selectedEmployee?.totalRetardMins || 0}
+                        {selectedEmployee?.formattedRetard}
                       </span>
                     </div>
                     <div className="flex justify-between items-center bg-emerald-50 border border-emerald-200 rounded-lg px-3 sm:px-4 py-2 sm:py-3">

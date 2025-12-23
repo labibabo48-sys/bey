@@ -263,10 +263,12 @@ const formatTime = (dateStr: string) => {
 
 const formatDuration = (mins: number) => {
   if (!mins || mins <= 0) return "-";
-  if (mins < 60) return `${mins} min`;
   const h = Math.floor(mins / 60);
   const m = mins % 60;
-  return m > 0 ? `${h}h ${String(m).padStart(2, '0')}` : `${h}h`;
+  if (h > 0) {
+    return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  }
+  return `${m} min`;
 };
 
 // Simple cache with TTL (Time To Live)
@@ -838,7 +840,7 @@ async function recomputePayrollForDate(targetDateStr: string, specificUserId: st
 
         if (totalRetard > 0) {
           isRetard = true;
-          reason = `${totalRetard} min`;
+          reason = formatDuration(totalRetard);
         }
 
         if (userPunches.length === 0) {
@@ -885,7 +887,7 @@ async function recomputePayrollForDate(targetDateStr: string, specificUserId: st
 
             if (diffMins > 0) {
               isRetard = true;
-              reason = `${diffMins} min`;
+              reason = formatDuration(diffMins);
             }
           }
 
@@ -1690,13 +1692,19 @@ const resolvers = {
             const diffMins = Math.floor((firstD.getTime() - shiftStartTime.getTime()) / 60000);
             if (diffMins > 10) { // Only count if > 10 mins late
               isLiveRetard = true;
-              liveDelay = `${diffMins} min`;
+              liveDelay = formatDuration(diffMins);
             }
           }
         }
 
         const isRetard = !!currentRetardRecord || isLiveRetard;
-        const delay = currentRetardRecord?.reason || liveDelay;
+        let delay = currentRetardRecord?.reason || liveDelay;
+
+        // Force re-format if it's in the old "X min" format
+        if (delay && delay.includes("min")) {
+          const m = delay.match(/(\d+)/);
+          if (m) delay = formatDuration(parseInt(m[1]));
+        }
 
         const isManualPresent = userAbsents.some((a: any) => {
           const t = (a.type || "").toLowerCase().trim();

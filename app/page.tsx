@@ -160,8 +160,20 @@ function DashboardContent() {
 
     const totalDelayMins = expectedToday.reduce((sum: number, p: any) => {
       if (p.state === "Retard" && p.delay) {
-        const match = p.delay.match(/(\d+)/);
-        return sum + (match ? parseInt(match[1]) : 0);
+        let mins = 0;
+        const hMatch = p.delay.match(/(\d+)h/);
+        const mMatch = p.delay.match(/(\d+)m($|\s)/); // Match 'm' at end or followed by space
+        const minMatch = p.delay.match(/(\d+) min/);
+
+        if (hMatch) mins += parseInt(hMatch[1]) * 60;
+        if (mMatch) mins += parseInt(mMatch[1]);
+        if (minMatch) mins += parseInt(minMatch[1]);
+
+        if (!hMatch && !mMatch && !minMatch) {
+          const simpleMatch = p.delay.match(/^(\d+)$/);
+          if (simpleMatch) mins += parseInt(simpleMatch[1]);
+        }
+        return sum + mins;
       }
       return sum;
     }, 0);
@@ -296,7 +308,7 @@ function DashboardContent() {
                   value={retardsCount}
                   icon={Clock}
                   color="red"
-                  change={`- ${totalDelayMins} min de retard total`}
+                  change={`- ${totalDelayMins >= 60 ? `${Math.floor(totalDelayMins / 60)}h ${totalDelayMins % 60}m` : `${totalDelayMins} min`} total`}
                   trend={retardsCount > 0 ? "down" : "up"}
                   href="/attendance"
                 />

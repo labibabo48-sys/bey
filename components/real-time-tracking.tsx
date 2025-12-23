@@ -101,16 +101,16 @@ export function RealTimeTracking({ initialData }: { initialData?: any }) {
         let status = apiState || "Absent"
         if (status === "Présent" && clockOut) status = "Terminé"
 
-        // Calculate hours roughly if both exist
-        let hours = 0
+        // Calculate total minutes worked
+        let totalMins = 0;
         if (clockIn && clockOut) {
           try {
-            const [h1, m1] = clockIn.split(':').map(Number)
-            const [h2, m2] = clockOut.split(':').map(Number)
-            let endH = h2;
-            if (h2 < h1) endH += 24;
-            hours = (endH + m2 / 60) - (h1 + m1 / 60)
-            if (hours < 0) hours = 0
+            const [h1, m1] = clockIn.split(':').map(Number);
+            const [h2, m2] = clockOut.split(':').map(Number);
+            let startMins = h1 * 60 + m1;
+            let endMins = h2 * 60 + m2;
+            if (endMins < startMins) endMins += 24 * 60; // Overnight
+            totalMins = endMins - startMins;
           } catch (e) { }
         }
 
@@ -122,7 +122,7 @@ export function RealTimeTracking({ initialData }: { initialData?: any }) {
           department: user.departement || user.department || "Personnel",
           clockIn: clockIn || "--:--",
           clockOut: clockOut || "--:--",
-          hours: hours,
+          totalMins: totalMins,
           shift: shift || "-",
           isConnected: !!clockIn || !!clockOut || apiState === 'Présent' || apiState === 'Retard',
           status: status,
@@ -368,7 +368,9 @@ export function RealTimeTracking({ initialData }: { initialData?: any }) {
                     )}
                   </div>
 
-                  <div className="hidden sm:block font-medium text-[#3d2c1e]">{emp.hours.toFixed(1)}h</div>
+                  <div className="hidden sm:block font-medium text-[#3d2c1e]">
+                    {emp.totalMins > 0 ? `${Math.floor(emp.totalMins / 60)}h ${emp.totalMins % 60}m` : "0h"}
+                  </div>
 
                   <div className="text-right sm:text-left">
                     <Button
