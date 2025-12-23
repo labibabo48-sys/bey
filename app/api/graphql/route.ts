@@ -791,9 +791,10 @@ async function recomputePayrollForDate(targetDateStr: string, specificUserId: st
 
       const firstP = userPunches[0];
       const firstD = new Date(firstP.device_time);
+      const sTypeUpper = (shiftType || "").toUpperCase();
       if (firstD.getHours() >= 14) {
         shiftType = "Soir";
-      } else if (firstD.getHours() < 14 && shiftType === "Soir") {
+      } else if (firstD.getHours() < 14 && sTypeUpper === "SOIR") {
         shiftType = "Matin";
       }
     }
@@ -852,22 +853,24 @@ async function recomputePayrollForDate(targetDateStr: string, specificUserId: st
           }
         }
       } else {
+        const sTypeUpper = (shiftType || "").toUpperCase();
         let startHour = 7;
-        if (shiftType === "Soir") startHour = 16;
+        if (sTypeUpper === "SOIR") startHour = 16;
 
         const shiftStartTime = new Date(logicalDay);
         shiftStartTime.setHours(startHour, 0, 0, 0);
 
         if (userPunches.length === 0) {
-          const shiftStartHour = (shiftType === "Matin" || shiftType === "Doublage") ? 8 : 16;
-          const shiftStartMin = (shiftType === "Matin" || shiftType === "Doublage") ? 30 : 30;
-          const shiftStartTime = new Date(logicalDay);
-          shiftStartTime.setHours(shiftStartHour, shiftStartMin, 0, 0);
+          const isMatinOrDoublage = sTypeUpper === "MATIN" || sTypeUpper === "DOUBLAGE";
+          const shiftStartHour = isMatinOrDoublage ? 8 : 16;
+          const shiftStartMin = isMatinOrDoublage ? 30 : 30;
+          const shiftStartTimeAbs = new Date(logicalDay);
+          shiftStartTimeAbs.setHours(shiftStartHour, shiftStartMin, 0, 0);
 
-          // Threshold of 60 minutes late to consider auto-absent
-          const thresholdTime = new Date(shiftStartTime.getTime() + 60 * 60000);
+          // Threshold of 30 minutes late to consider auto-absent (reduced from 60 per user feedback)
+          const thresholdTime = new Date(shiftStartTimeAbs.getTime() + 30 * 60000);
 
-          const shiftEndHour = (shiftType === "Matin") ? 16 : 23;
+          const shiftEndHour = isMatinOrDoublage ? 16 : 23;
           const shiftEndTime = new Date(logicalDay);
           shiftEndTime.setHours(shiftEndHour, 0, 0, 0);
 
@@ -1693,10 +1696,11 @@ const resolvers = {
         const currentRetardRecord = dayRetards.find((r: any) => r.user_id == user.id);
 
         // Live Retard Detection
+        const sTypeUpper = (shiftType || "").toUpperCase();
         let liveDelay = null;
         let isLiveRetard = false;
-        if (hasPunches && shiftType !== "Repos") {
-          let startHour = (shiftType === "Soir") ? 16 : 8; // Matin shift usually starts at 8-8:30, using 8 as base
+        if (hasPunches && sTypeUpper !== "REPOS") {
+          let startHour = (sTypeUpper === "SOIR") ? 16 : 8; // Matin shift usually starts at 8-8:30, using 8 as base
           const shiftStartTime = new Date(logicalDay);
           shiftStartTime.setHours(startHour, 0, 0, 0);
           const firstD = new Date(userPunches[0].device_time);
@@ -1729,15 +1733,17 @@ const resolvers = {
         const adjustedHour = (currentHourReal < 4) ? currentHourReal + 24 : currentHourReal;
         const currentTotalMins = adjustedHour * 60 + currentMin;
 
-        // Intelligent Absence detection: if it's well past shift start, show as Absent
+        // Intelligent Absence detection: if it's past shift start + grace period, show as Absent
         let isOverdue = false;
-        if (shiftType === "Matin" || shiftType === "Doublage") {
-          if (currentTotalMins > (9 * 60 + 30)) isOverdue = true; // Past 09:30
-        } else if (shiftType === "Soir") {
-          if (currentTotalMins > (17 * 60 + 30)) isOverdue = true; // Past 17:30
+        if (sTypeUpper === "MATIN" || sTypeUpper === "DOUBLAGE") {
+          // Matin starts at 08:30. Overdue by 08:45 (15 min grace)
+          if (currentTotalMins > (8 * 60 + 45)) isOverdue = true;
+        } else if (sTypeUpper === "SOIR") {
+          // Soir starts at 16:30. Overdue by 16:45
+          if (currentTotalMins > (16 * 60 + 45)) isOverdue = true;
         }
 
-        const shiftEndLimit = (shiftType === "Soir") ? 23 : 16;
+        const shiftEndLimit = (sTypeUpper === "SOIR") ? 23 : 16;
         const isTooEarlyToMarkAbsent = isToday && !isOverdue && adjustedHour < shiftEndLimit;
 
         // PRIORITY: Actual fingerprint punches override everything
