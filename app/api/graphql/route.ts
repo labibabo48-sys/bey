@@ -170,6 +170,13 @@ const typeDefs = `#graphql
     updated: Boolean
   }
 
+  type PerformanceStats {
+    user: User!
+    totalHours: Float
+    daysWorked: Int
+    avgHoursPerDay: Float
+  }
+
   input PayrollInput {
     present: Int
     acompte: Float
@@ -197,6 +204,7 @@ const typeDefs = `#graphql
     getPayroll(month: String!, userId: ID): [PayrollRecord]
     getUser(id: ID!): User
     getLogins: [User]
+    getTopPerformers(month: String!): [PerformanceStats]
     login(username: String!, password: String!): LoginResult
     getCinCard(userId: ID!): CardCin
     getNotifications(userId: ID, limit: Int): [Notification]
@@ -804,6 +812,7 @@ async function recomputePayrollForDate(targetDateStr: string, specificUserId: st
     let isAbsent = false;
     let isRetard = false;
     let reason = "";
+    let calculatedRetardMins = 0;
 
     const todayNow = new Date();
     const currentLogicalDate = getLogicalDate(todayNow);
@@ -844,6 +853,7 @@ async function recomputePayrollForDate(targetDateStr: string, specificUserId: st
         if (totalRetard > 0) {
           isRetard = true;
           reason = formatDuration(totalRetard);
+          calculatedRetardMins = totalRetard;
         }
 
         if (userPunches.length === 0) {
@@ -891,6 +901,7 @@ async function recomputePayrollForDate(targetDateStr: string, specificUserId: st
             if (diffMins > 0) {
               isRetard = true;
               reason = formatDuration(diffMins);
+              calculatedRetardMins = diffMins;
             }
           }
 
@@ -951,14 +962,20 @@ async function recomputePayrollForDate(targetDateStr: string, specificUserId: st
 
     const currentRetard = retardsMap.get(userIdNum);
 
-    let retardMins = 0;
-    if (currentRetard) {
-      const match = currentRetard.reason?.match(/(\d+)\s*min/);
-      if (match) retardMins = parseInt(match[1]);
-    } else if (isRetard) {
-      // Use newly detected retard if no DB record exists yet in this run
-      const match = reason?.match(/(\d+)\s*min/);
-      if (match) retardMins = parseInt(match[1]);
+    let retardMins = calculatedRetardMins;
+    if (currentRetard && retardMins === 0) {
+      // Fallback to parsing if we have a DB record but didn't calculate in this run
+      const m = currentRetard.reason || "";
+      if (m.includes("h")) {
+        const hMatch = m.match(/(\d+)h/);
+        const minMatch = m.match(/(\d+)m/);
+        const h = hMatch ? parseInt(hMatch[1]) : 0;
+        const mins = minMatch ? parseInt(minMatch[1]) : 0;
+        retardMins = h * 60 + mins;
+      } else {
+        const match = m.match(/(\d+)/);
+        if (match) retardMins = parseInt(match[1]);
+      }
     }
 
     const isPresentType = (type: string) => {
@@ -1454,8 +1471,17 @@ const resolvers = {
                 finalRemark = dayAbsent.reason || r.remarque;
               }
             } else if (dayRetard) {
-              const match = dayRetard.reason?.match(/(\d+)\s*min/);
-              finalRetard = match ? parseInt(match[1]) : r.retard;
+              const m = dayRetard.reason || "";
+              if (m.includes("h")) {
+                const hMatch = m.match(/(\d+)h/);
+                const minMatch = m.match(/(\d+)m/);
+                const h = hMatch ? parseInt(hMatch[1]) : 0;
+                const mins = minMatch ? parseInt(minMatch[1]) : 0;
+                finalRetard = h * 60 + mins;
+              } else {
+                const match = m.match(/(\d+)/);
+                finalRetard = match ? parseInt(match[1]) : r.retard;
+              }
               finalRemark = dayRetard.reason;
               if (finalRetard > 10 && finalInfraction < 30) finalInfraction += 30;
             } else if (r.present === 1 && !r.remarque) {
@@ -1509,6 +1535,62 @@ const resolvers = {
         return results;
       } catch (e) {
         console.error("getPayroll error:", e);
+        return [];
+      }
+    },
+    getTopPerformers: async (_: any, { month }: { month: string }) => {
+      await initializePayrollTable(month);
+      const tableName = `paiecurrent_${month}`;
+      try {
+        const res = await pool.query(`SELECT * FROM public.\"${tableName}\" WHERE present = 1`);
+        const payroll = res.rows;
+
+        const usersRes = await pool.query('SELECT id, username, photo, \"département\" as departement FROM public.users WHERE role != \'admin\' AND is_blocked = FALSE');
+        const users = usersRes.rows;
+
+        const statsMap = new Map();
+
+        payroll.forEach((row: any) => {
+          const uid = String(row.user_id);
+          if (!statsMap.has(uid)) {
+            statsMap.set(uid, { totalMins: 0, daysWorked: 0 });
+          }
+          const stats = statsMap.get(uid);
+          stats.daysWorked += 1;
+          if (row.clock_in && row.clock_out) {
+            try {
+              const [h1, m1] = row.clock_in.split(':').map(Number);
+              const [h2, m2] = row.clock_out.split(':').map(Number);
+              if (!isNaN(h1) && !isNaN(m1) && !isNaN(h2) && !isNaN(m2)) {
+                let diff = (h2 * 60 + m2) - (h1 * 60 + m1);
+                if (diff < 0) diff += 24 * 60;
+                stats.totalMins += diff;
+              }
+            } catch (e) { }
+          }
+        });
+
+        const results = users.map((user: any) => {
+          const stats = statsMap.get(String(user.id)) || { totalMins: 0, daysWorked: 0 };
+          const totalHours = parseFloat((stats.totalMins / 60).toFixed(1));
+          const avg = stats.daysWorked > 0 ? parseFloat((totalHours / stats.daysWorked).toFixed(1)) : 0;
+          return {
+            user: {
+              ...user,
+              departement: user.departement
+            },
+            totalHours,
+            daysWorked: stats.daysWorked,
+            avgHoursPerDay: avg
+          };
+        })
+          .filter((r: any) => r.totalHours > 0)
+          .sort((a: any, b: any) => b.totalHours - a.totalHours)
+          .slice(0, 5);
+
+        return results;
+      } catch (e) {
+        console.error("getTopPerformers error:", e);
         return [];
       }
     },
@@ -1693,7 +1775,7 @@ const resolvers = {
           const firstD = new Date(userPunches[0].device_time);
           if (firstD > shiftStartTime) {
             const diffMins = Math.floor((firstD.getTime() - shiftStartTime.getTime()) / 60000);
-            if (diffMins > 10) { // Only count if > 10 mins late
+            if (diffMins > 0) {
               isLiveRetard = true;
               liveDelay = formatDuration(diffMins);
             }
@@ -1702,11 +1784,22 @@ const resolvers = {
 
         const isRetard = !!currentRetardRecord || isLiveRetard;
         let delay = currentRetardRecord?.reason || liveDelay;
+        let currentInfraction = 0;
 
-        // Force re-format if it's in the old "X min" format
-        if (delay && delay.includes("min")) {
-          const m = delay.match(/(\d+)/);
-          if (m) delay = formatDuration(parseInt(m[1]));
+        // Calculate live infraction if it's a retard
+        if (isRetard && delay) {
+          let mins = 0;
+          if (delay.includes("h")) {
+            const hMatch = delay.match(/(\d+)h/);
+            const minMatch = delay.match(/(\d+)m/);
+            const h = hMatch ? parseInt(hMatch[1]) : 0;
+            const ms = minMatch ? parseInt(minMatch[1]) : 0;
+            mins = h * 60 + ms;
+          } else {
+            const m = delay.match(/(\d+)/);
+            if (m) mins = parseInt(m[1]);
+          }
+          if (mins > 10) currentInfraction = 30;
         }
 
         const isManualPresent = userAbsents.some((a: any) => {
@@ -1821,8 +1914,8 @@ const resolvers = {
           shift,
           workedHours,
           delay,
-          infraction: userPayroll ? parseFloat(userPayroll.infraction || 0) : 0,
-          remarque: userPayroll ? userPayroll.remarque : null,
+          infraction: isManuallyUpdated ? parseFloat(userPayroll.infraction || 0) : Math.max(currentInfraction, (userPayroll ? parseFloat(userPayroll.infraction || 0) : 0)),
+          remarque: userPayroll ? userPayroll.remarque : (isRetard ? delay : null),
           lastPunch: userPunches.length > 0 ? userPunches[userPunches.length - 1].device_time : null
         };
       });

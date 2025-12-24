@@ -51,6 +51,8 @@ const GET_DASHBOARD_DATA = gql`
       shift
       lastPunch
       delay
+      infraction
+      remarque
     }
     getRetards(date: $date) {
       id

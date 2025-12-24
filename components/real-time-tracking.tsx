@@ -343,109 +343,213 @@ export function RealTimeTracking({ initialData }: { initialData?: any }) {
           </div>
         </div>
 
-        {/* Table */}
-        <div className="overflow-x-auto -mx-4 sm:mx-0">
-          <div className="min-w-full sm:min-w-[800px] px-4 sm:px-0">
-            {/* Table Header */}
-            <div className="grid grid-cols-6 sm:grid-cols-9 gap-1 sm:gap-4 py-3 border-b border-[#c9b896] text-[9px] sm:text-sm font-bold sm:font-medium text-[#6b5744] uppercase sm:normal-case">
-              <div className="hidden sm:block text-center sm:text-left">ID</div>
-              <div className="col-span-2 sm:col-span-1">Employé</div>
-              <div className="hidden md:block">Département</div>
-              <div className="text-center sm:text-left">Entrée</div>
-              <div className="text-center sm:text-left">Sortie</div>
-              <div className="hidden sm:block">Shift</div>
-              <div className="text-center sm:text-left">État</div>
-              <div className="hidden sm:block">Heures</div>
-              <div className="text-center sm:text-right">Action</div>
-            </div>
-
-            {/* Table Body */}
-            <div className="divide-y divide-[#e8e0d5]">
+        {/* Desktop View Table */}
+        <div className="hidden min-[1100px]:block overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-[#f8f6f1] border-b border-[#c9b896]">
+                <th className="px-4 py-4 font-bold text-[#8b5a2b] uppercase tracking-widest text-[10px] sm:text-xs">ID</th>
+                <th className="px-4 py-4 font-bold text-[#8b5a2b] uppercase tracking-widest text-[10px] sm:text-xs">Employé</th>
+                <th className="px-4 py-4 font-bold text-[#8b5a2b] uppercase tracking-widest text-[10px] sm:text-xs">Département</th>
+                <th className="px-4 py-4 font-bold text-[#8b5a2b] uppercase tracking-widest text-[10px] sm:text-xs text-center">Entrée</th>
+                <th className="px-4 py-4 font-bold text-[#8b5a2b] uppercase tracking-widest text-[10px] sm:text-xs text-center">Sortie</th>
+                <th className="px-4 py-4 font-bold text-[#8b5a2b] uppercase tracking-widest text-[10px] sm:text-xs text-center">Shift</th>
+                <th className="px-4 py-4 font-bold text-[#8b5a2b] uppercase tracking-widest text-[10px] sm:text-xs text-center">État</th>
+                <th className="px-4 py-4 font-bold text-[#8b5a2b] uppercase tracking-widest text-[10px] sm:text-xs text-center">Heures</th>
+                <th className="px-4 py-4 font-bold text-[#8b5a2b] uppercase tracking-widest text-[10px] sm:text-xs text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#c9b896]/30">
               {filteredEmployees.map((emp: any) => (
-                <div key={emp.id} className="grid grid-cols-6 sm:grid-cols-9 gap-1 sm:gap-4 py-3 sm:py-4 items-center text-[10px] sm:text-sm">
-                  <div className="hidden sm:block text-[#6b5744] font-mono">{emp.zktecoId}</div>
-
-                  <div
-                    className={cn(
-                      "col-span-2 sm:col-span-1 font-bold sm:font-semibold text-[#3d2c1e] uppercase flex items-center gap-1 sm:gap-2 min-w-0 group",
-                      emp.status === "Retard" && "cursor-pointer"
-                    )}
-                    onClick={() => emp.status === "Retard" && handlePardonClick(emp)}
-                  >
-                    <div className={cn(
-                      "h-6 w-6 sm:h-8 sm:w-8 rounded-full bg-[#8b5a2b]/10 flex items-center justify-center text-[#8b5a2b] font-bold overflow-hidden border border-[#c9b896]/30 shrink-0 transition-all",
-                      emp.status === "Retard" && "group-hover:scale-110 group-hover:border-[#8b5a2b] ring-offset-2 group-hover:ring-2 ring-amber-400"
-                    )}>
-                      {emp.photo ? (
-                        <img src={emp.photo} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <span className="text-[8px] sm:text-[10px]">{emp.name?.charAt(0)}</span>
-                      )}
-                    </div>
-                    <div className="flex flex-col min-w-0 text-[9px] sm:text-sm">
-                      <span className="truncate leading-tight font-semibold group-hover:text-[#8b5a2b] transition-colors">{emp.name}</span>
-                      <span className="text-[10px] sm:text-xs text-[#8b5a2b] font-bold truncate">
-                        📅 {format(date || new Date(), 'dd/MM/yyyy')}
-                      </span>
-                      <span className="md:hidden text-[8px] text-[#6b5744] opacity-80 font-medium truncate tracking-tight">
-                        {emp.department}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="hidden md:block text-[#6b5744] truncate">{emp.department}</div>
-                  <div className="text-[#3d2c1e] font-mono text-center sm:text-left">{emp.clockIn}</div>
-                  <div className="text-[#3d2c1e] font-mono text-center sm:text-left">{emp.clockOut}</div>
-                  <div className="hidden sm:block text-[#3d2c1e] font-bold">{emp.shift}</div>
-
-                  <div className="flex flex-col justify-center sm:justify-start items-center sm:items-start gap-1">
-                    <span
+                <tr key={emp.id} className="hover:bg-[#f8f6f1]/50 transition-colors group">
+                  <td className="px-4 py-4">
+                    <span className="text-xs font-black text-[#8b5a2b] opacity-40 bg-[#8b5a2b]/5 px-2 py-1 rounded">#{emp.zktecoId || emp.id}</span>
+                  </td>
+                  <td className="px-4 py-4">
+                    <div
                       className={cn(
-                        "inline-flex items-center rounded-full px-1.5 sm:px-3 py-0.5 sm:py-1 text-[9px] sm:text-xs font-bold uppercase tracking-tight sm:tracking-normal transition-all",
-                        (emp.status === "Connecté" || emp.status === "Présent")
-                          ? "bg-emerald-100 text-emerald-700 border border-emerald-300"
-                          : emp.status === "Terminé"
-                            ? "bg-blue-100 text-blue-700 border border-blue-300"
-                            : emp.status === "Retard"
-                              ? "bg-amber-100 text-amber-700 border border-amber-300"
-                              : emp.status === "Missing_Exit"
-                                ? "bg-orange-100 text-orange-700 border border-orange-300"
-                                : emp.status === "Repos"
-                                  ? "bg-slate-100 text-slate-700 border border-slate-300"
-                                  : "bg-rose-100 text-rose-700 border border-rose-300"
+                        "flex items-center gap-3 group/item transition-all",
+                        emp.status === "Retard" && "cursor-pointer"
                       )}
+                      onClick={() => emp.status === "Retard" && handlePardonClick(emp)}
                     >
-                      {emp.status === "Missing_Exit" ? "Sortie Manquante" : (emp.status === "Connecté" ? "Présent" : emp.status)}
+                      <div className={cn(
+                        "h-10 w-10 rounded-full bg-gradient-to-br from-[#8b5a2b] to-[#c9b896] flex items-center justify-center text-white font-black text-xs shadow-md overflow-hidden border border-[#c9b896]/30 transition-transform",
+                        emp.status === "Retard" && "group-hover/item:scale-110 group-hover/item:border-[#8b5a2b] ring-offset-2 group-hover/item:ring-2 ring-amber-400"
+                      )}>
+                        {emp.photo ? (
+                          <img src={emp.photo} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          emp.name?.substring(0, 2).toUpperCase()
+                        )}
+                      </div>
+                      <div className="flex flex-col">
+                        <span className={cn(
+                          "font-bold text-[#3d2c1e] text-base leading-tight",
+                          emp.status === "Retard" && "group-hover/item:text-[#8b5a2b]"
+                        )}>{emp.name}</span>
+                        <span className="text-[10px] text-[#8b5a2b] opacity-60 font-black uppercase tracking-widest">
+                          📅 {format(date || new Date(), 'dd/MM/yyyy')}
+                        </span>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-4">
+                    <span className="text-[#6b5744] font-bold text-[10px] uppercase tracking-widest px-2 py-0.5 bg-[#8b5a2b]/5 rounded border border-[#8b5a2b]/10">{emp.department}</span>
+                  </td>
+                  <td className="px-4 py-4 text-center">
+                    <div className="font-mono font-black text-[#3d2c1e] text-base">{emp.clockIn}</div>
+                  </td>
+                  <td className="px-4 py-4 text-center">
+                    <div className="font-mono font-black text-[#3d2c1e] text-base">{emp.clockOut}</div>
+                  </td>
+                  <td className="px-4 py-4 text-center">
+                    <span className={cn(
+                      "px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-tighter border",
+                      emp.shift === "Soir" ? "bg-indigo-50 text-indigo-700 border-indigo-100" :
+                        emp.shift === "Matin" ? "bg-amber-50 text-amber-700 border-amber-100" :
+                          emp.shift === "Doublage" ? "bg-purple-50 text-purple-700 border-purple-100" :
+                            "bg-gray-50 text-gray-500 border-gray-100"
+                    )}>
+                      {emp.shift || "—"}
                     </span>
-                    {emp.status === "Retard" && emp.delay && (
-                      <span className="text-[9px] sm:text-[10px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-200 animate-pulse whitespace-nowrap">
-                        -{emp.delay}
+                  </td>
+                  <td className="px-4 py-4 text-center">
+                    <div className="flex flex-col items-center gap-1">
+                      <span
+                        className={cn(
+                          "inline-flex items-center rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest border shadow-sm",
+                          (emp.status === "Connecté" || emp.status === "Présent")
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            : emp.status === "Terminé"
+                              ? "bg-blue-50 text-blue-700 border-blue-200"
+                              : emp.status === "Retard"
+                                ? "bg-amber-50 text-amber-700 border-amber-200"
+                                : emp.status === "Missing_Exit"
+                                  ? "bg-orange-50 text-orange-700 border-orange-200"
+                                  : emp.status === "Repos"
+                                    ? "bg-slate-50 text-slate-500 border-slate-200"
+                                    : "bg-rose-50 text-rose-700 border-rose-200"
+                        )}
+                      >
+                        {emp.status === "Missing_Exit" ? "Sortie Manquante" : (emp.status === "Connecté" ? "Présent" : emp.status)}
                       </span>
-                    )}
-                  </div>
-
-                  <div className="hidden sm:block font-medium text-[#3d2c1e]">
-                    {emp.totalMins > 0 ? `${Math.floor(emp.totalMins / 60)}h ${emp.totalMins % 60}m` : "0h"}
-                  </div>
-
-                  <div className="text-center sm:text-right">
+                      {emp.status === "Retard" && emp.delay && (
+                        <span className="text-[9px] font-black text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-200 animate-pulse whitespace-nowrap">
+                          -{emp.delay}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-4 py-4 text-center">
+                    <span className="text-base font-black text-emerald-700">{emp.totalMins > 0 ? `${Math.floor(emp.totalMins / 60)}h ${emp.totalMins % 60}m` : "0h"}</span>
+                  </td>
+                  <td className="px-4 py-4 text-right">
                     <Button
                       variant="outline"
                       size="sm"
-                      className="h-8 w-8 sm:h-9 sm:w-9 p-0 text-[#8b5a2b] border-[#c9b896] hover:bg-[#8b5a2b] hover:text-white transition-all shadow-sm"
-                      title="Voir l'historique"
+                      className="h-8 w-8 p-0 text-[#8b5a2b] border-[#c9b896] hover:bg-[#8b5a2b] hover:text-white transition-all shadow-sm rounded-lg"
                       onClick={() => {
                         setSelectedUser({ id: emp.id, name: emp.name });
                         setIsModalOpen(true);
                       }}
                     >
-                      <ArrowUpRight className="h-4 w-4 sm:h-5 sm:w-5" />
+                      <ArrowUpRight className="h-4 w-4" />
                     </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Mobile View Cards */}
+        <div className="min-[1100px]:hidden flex flex-col divide-y divide-[#c9b896]/20">
+          {filteredEmployees.map((emp: any) => (
+            <div
+              key={emp.id}
+              className="p-4 bg-white flex flex-col gap-4 active:bg-[#f8f6f1] transition-colors"
+              onClick={() => {
+                if (emp.status === "Retard") {
+                  handlePardonClick(emp);
+                } else {
+                  setSelectedUser({ id: emp.id, name: emp.name });
+                  setIsModalOpen(true);
+                }
+              }}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="h-12 w-12 rounded-full bg-gradient-to-br from-[#8b5a2b] to-[#c9b896] p-[1px] shadow-md border border-[#c9b896]/30 overflow-hidden shrink-0">
+                    {emp.photo ? (
+                      <img src={emp.photo} alt="" className="w-full h-full object-cover rounded-full" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-white font-black text-sm uppercase">
+                        {emp.name?.substring(0, 2)}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <h4 className="font-black text-[#3d2c1e] text-base truncate uppercase">{emp.name}</h4>
+                    <span className="text-[10px] font-bold text-[#8b5a2b]/70 uppercase tracking-widest">{emp.department}</span>
                   </div>
                 </div>
-              ))}
+                <div className="flex flex-col items-end gap-1">
+                  <span
+                    className={cn(
+                      "inline-flex items-center rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-widest border shadow-sm",
+                      (emp.status === "Connecté" || emp.status === "Présent")
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        : emp.status === "Terminé"
+                          ? "bg-blue-50 text-blue-700 border-blue-200"
+                          : emp.status === "Retard"
+                            ? "bg-amber-50 text-amber-700 border-amber-200"
+                            : emp.status === "Missing_Exit"
+                              ? "bg-orange-50 text-orange-700 border-orange-200"
+                              : emp.status === "Repos"
+                                ? "bg-slate-50 text-slate-500 border-slate-200"
+                                : "bg-rose-50 text-rose-700 border-rose-200"
+                    )}
+                  >
+                    {emp.status === "Missing_Exit" ? "Manquante" : (emp.status === "Connecté" ? "Présent" : emp.status)}
+                  </span>
+                  {emp.status === "Retard" && emp.delay && (
+                    <span className="text-[9px] font-black text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-200 animate-pulse">
+                      -{emp.delay}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 bg-[#f8f6f1]/50 p-3 rounded-xl border border-[#c9b896]/10">
+                <div className="flex flex-col items-center">
+                  <span className="text-[8px] font-black text-[#8b5a2b]/50 uppercase tracking-widest">In</span>
+                  <span className="font-mono font-black text-[#3d2c1e] text-sm">{emp.clockIn || "--:--"}</span>
+                </div>
+                <div className="flex flex-col items-center border-x border-[#c9b896]/20">
+                  <span className="text-[8px] font-black text-[#8b5a2b]/50 uppercase tracking-widest">Out</span>
+                  <span className="font-mono font-black text-[#3d2c1e] text-sm">{emp.clockOut || "--:--"}</span>
+                </div>
+                <div className="flex flex-col items-center">
+                  <span className="text-[8px] font-black text-[#8b5a2b]/50 uppercase tracking-widest">Temps</span>
+                  <span className="font-black text-emerald-700 text-sm">{emp.totalMins > 0 ? `${Math.floor(emp.totalMins / 60)}h ${emp.totalMins % 60}m` : "0h"}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between px-1">
+                <span className="text-[10px] font-black text-[#8b5a2b]/40 uppercase tracking-widest">ID: {emp.zktecoId || emp.id}</span>
+                <span className={cn(
+                  "px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-tighter border",
+                  emp.shift === "Soir" ? "bg-indigo-50 text-indigo-700 border-indigo-100" :
+                    emp.shift === "Matin" ? "bg-amber-50 text-amber-700 border-amber-100" :
+                      emp.shift === "Doublage" ? "bg-purple-50 text-purple-700 border-purple-100" :
+                        "bg-gray-50 text-gray-500 border-gray-100"
+                )}>
+                  Shift: {emp.shift || "—"}
+                </span>
+              </div>
             </div>
-          </div>
+          ))}
         </div>
 
         {/* Empty State */}

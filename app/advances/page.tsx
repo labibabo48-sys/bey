@@ -528,25 +528,26 @@ function AdvancesContent() {
                 </div>
               )}
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[700px]">
+            {/* Desktop View Table */}
+            <div className="hidden min-[1100px]:block overflow-x-auto">
+              <table className="w-full">
                 <thead>
                   <tr className="border-b border-[#c9b896]">
-                    <th className="p-4 sm:p-5 text-left text-sm sm:text-base font-medium text-[#6b5744]">Employé</th>
-                    <th className="p-4 sm:p-5 text-left text-sm sm:text-base font-medium text-[#6b5744]">Montant</th>
-                    <th className="p-4 sm:p-5 text-left text-sm sm:text-base font-medium text-[#6b5744]">Motif</th>
-                    <th className="p-4 sm:p-5 text-left text-sm sm:text-base font-medium text-[#6b5744]">Date</th>
-                    <th className="p-4 sm:p-5 text-left text-sm sm:text-base font-medium text-[#6b5744]">Statut</th>
-                    <th className="p-4 sm:p-5 text-left text-sm sm:text-base font-medium text-[#6b5744]">Actions</th>
+                    <th className="p-4 sm:p-5 text-left text-sm font-black text-[#8b5a2b] uppercase tracking-widest">Employé</th>
+                    <th className="p-4 sm:p-5 text-left text-sm font-black text-[#8b5a2b] uppercase tracking-widest">Montant</th>
+                    <th className="p-4 sm:p-5 text-left text-sm font-black text-[#8b5a2b] uppercase tracking-widest">Motif</th>
+                    <th className="p-4 sm:p-5 text-left text-sm font-black text-[#8b5a2b] uppercase tracking-widest">Date</th>
+                    <th className="p-4 sm:p-5 text-left text-sm font-black text-[#8b5a2b] uppercase tracking-widest">Statut</th>
+                    <th className="p-4 sm:p-5 text-right text-sm font-black text-[#8b5a2b] uppercase tracking-widest">Actions</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-[#c9b896]/30">
                   {filteredAdvances.length > 0 ? (
                     filteredAdvances.map((advance: any) => {
-                      const employee = users.find((u: any) => u.id === advance.user_id) || { name: advance.username || 'Inconnu', departement: '' };
+                      const employee = users.find((u: any) => u.id === advance.user_id) || { username: advance.username || 'Inconnu', departement: '' };
 
                       return (
-                        <tr key={advance.id} id={`advance-row-${advance.user_id}`} className="border-b border-[#c9b896]/50 hover:bg-[#f8f6f1]/50 transition-colors">
+                        <tr key={advance.id} id={`advance-row-${advance.user_id}`} className="hover:bg-[#f8f6f1]/50 transition-colors">
                           <td className="p-4 sm:p-5">
                             <div
                               className="flex items-center gap-3 cursor-pointer group"
@@ -555,73 +556,165 @@ function AdvancesContent() {
                                 setShowUserDetails(true);
                               }}
                             >
-                              <div className="h-10 w-10 sm:h-12 sm:w-12 flex-shrink-0 rounded-full bg-gradient-to-br from-[#8b5a2b] to-[#a0522d] flex items-center justify-center text-white font-bold overflow-hidden border border-[#c9b896]/30 group-hover:scale-105 transition-transform shadow-sm">
+                              <div className="h-11 w-11 flex-shrink-0 rounded-full bg-gradient-to-br from-[#8b5a2b] to-[#a0522d] flex items-center justify-center text-white font-black overflow-hidden border border-[#c9b896]/30 group-hover:scale-105 transition-transform shadow-md">
                                 {employee.photo ? (
                                   <img src={employee.photo} alt={employee.username} className="w-full h-full object-cover" />
                                 ) : (
-                                  employee.username?.charAt(0)
+                                  employee.username?.charAt(0).toUpperCase()
                                 )}
                               </div>
                               <div className="min-w-0">
-                                <p className="text-sm sm:text-base font-semibold text-[#3d2c1e] group-hover:text-[#8b5a2b] transition-colors truncate">
+                                <p className="text-base font-black text-[#3d2c1e] group-hover:text-[#8b5a2b] transition-colors truncate uppercase leading-tight">
                                   {employee.username}
                                 </p>
-                                <p className="text-xs sm:text-sm text-[#6b5744] truncate">{employee.departement}</p>
+                                <p className="text-[10px] font-bold text-[#8b5a2b] opacity-60 uppercase tracking-widest truncate">{employee.departement}</p>
                               </div>
                             </div>
                           </td>
-                          <td className="p-4 sm:p-5 font-[family-name:var(--font-heading)] text-sm sm:text-base font-bold text-[#8b5a2b]">
-                            {advance.montant?.toLocaleString()} TND
+                          <td className="p-4 sm:p-5">
+                            <div className="flex flex-col">
+                              <span className="text-lg font-black text-[#8b5a2b] tabular-nums leading-none">
+                                {advance.montant?.toLocaleString()}
+                              </span>
+                              <span className="text-[10px] font-bold text-[#6b5744] opacity-50 uppercase tracking-tighter">TND</span>
+                            </div>
                           </td>
-                          <td className="p-4 sm:p-5 text-sm sm:text-base text-[#3d2c1e]">{advance.motif}</td>
-                          <td className="p-4 sm:p-5 text-sm sm:text-base text-[#6b5744]">
+                          <td className="p-4 sm:p-5 text-sm font-bold text-[#3d2c1e] uppercase tracking-tight">{advance.motif}</td>
+                          <td className="p-4 sm:p-5 text-sm font-bold text-[#6b5744] tabular-nums">
                             {advance.date ? format(new Date(advance.date), "dd/MM/yyyy") : "-"}
                           </td>
                           <td className="p-4 sm:p-5">
                             <span
-                              className={`rounded-full px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-medium ${advance.statut === "Validé" || advance.statut === "approved"
-                                ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
-                                : advance.statut === "Refusé" || advance.statut === "rejected"
-                                  ? "bg-red-100 text-red-700 border border-red-200"
-                                  : "bg-amber-100 text-amber-700 border border-amber-200"
-                                }`}
+                              className={cn(
+                                "px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border shadow-sm",
+                                advance.statut === "Validé" || advance.statut === "approved"
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                  : advance.statut === "Refusé" || advance.statut === "rejected"
+                                    ? "bg-rose-50 text-rose-700 border-rose-200"
+                                    : "bg-amber-50 text-amber-700 border-amber-200"
+                              )}
                             >
                               {advance.statut === "approved" ? "Validé" : advance.statut === "rejected" ? "Refusé" : advance.statut}
                             </span>
                           </td>
-                          <td className="p-4 sm:p-5 flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-8 w-8 p-0 rounded-full border-[#c9b896] text-[#8b5a2b] hover:bg-[#8b5a2b] hover:text-white"
-                              onClick={() => handleOpenEdit(advance)}
-                              title="Modifier"
-                            >
-                              {/* Edit Icon */}
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></svg>
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="text-gray-500 hover:text-red-900 h-8 w-8 p-0 rounded-full ml-1"
-                              onClick={() => handleDelete(advance.id)}
-                              title="Supprimer"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                          <td className="p-4 sm:p-5">
+                            <div className="flex items-center justify-end gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-9 w-9 p-0 rounded-lg border-[#c9b896] text-[#8b5a2b] hover:bg-[#8b5a2b] hover:text-white transition-all shadow-sm"
+                                onClick={() => handleOpenEdit(advance)}
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></svg>
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-gray-400 hover:text-rose-600 h-9 w-9 p-0 rounded-lg"
+                                onClick={() => handleDelete(advance.id)}
+                              >
+                                <Trash2 className="h-5 w-5" />
+                              </Button>
+                            </div>
                           </td>
                         </tr>
                       )
                     })
                   ) : (
-                    <tr>
-                      <td colSpan={6} className="p-10 text-center">
-                        <p className="text-base text-[#6b5744]">Aucune avance trouvée</p>
-                      </td>
-                    </tr>
+                    <tr><td colSpan={6} className="p-20 text-center text-[#6b5744] font-bold opacity-30">AUCUNE AVANCE TROUVÉE</td></tr>
                   )}
                 </tbody>
               </table>
+            </div>
+
+            {/* Mobile View Cards */}
+            <div className="min-[1100px]:hidden flex flex-col divide-y divide-[#c9b896]/20">
+              {filteredAdvances.length > 0 ? (
+                filteredAdvances.map((advance: any) => {
+                  const employee = users.find((u: any) => u.id === advance.user_id) || { username: advance.username || 'Inconnu', departement: '' };
+
+                  return (
+                    <div
+                      key={advance.id}
+                      id={`advance-row-mobile-${advance.id}`}
+                      className="p-4 bg-white flex flex-col gap-4 active:bg-[#f8f6f1] transition-colors"
+                      onClick={() => handleOpenEdit(advance)}
+                    >
+                      {/* Top: User + Date */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="h-12 w-12 rounded-full bg-gradient-to-br from-[#8b5a2b] to-[#c9b896] p-[1px] shadow-md border border-[#c9b896]/30 overflow-hidden shrink-0">
+                            {employee.photo ? (
+                              <img src={employee.photo} alt={employee.username} className="w-full h-full object-cover rounded-full" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-white font-black text-sm uppercase">
+                                {employee.username?.substring(0, 2)}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex flex-col min-w-0">
+                            <h4 className="font-black text-[#3d2c1e] text-base truncate uppercase leading-tight">{employee.username}</h4>
+                            <span className="text-[10px] font-bold text-[#8b5a2b]/70 uppercase tracking-widest truncate">{employee.departement || "Personnel"}</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-1">
+                          <span className="text-[10px] font-black text-[#8b5a2b]/50 tabular-nums uppercase">
+                            {advance.date ? format(new Date(advance.date), "dd/MM/yyyy") : "-"}
+                          </span>
+                          <span
+                            className={cn(
+                              "px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border shadow-sm",
+                              advance.statut === "Validé" || advance.statut === "approved"
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                : advance.statut === "Refusé" || advance.statut === "rejected"
+                                  ? "bg-rose-50 text-rose-700 border-rose-200"
+                                  : "bg-amber-50 text-amber-700 border-amber-200"
+                            )}
+                          >
+                            {advance.statut === "approved" ? "Validé" : advance.statut === "rejected" ? "Refusé" : advance.statut}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Middle: Amount & Reason */}
+                      <div className="grid grid-cols-2 gap-2 bg-[#f8f6f1]/50 p-3 rounded-xl border border-[#c9b896]/10">
+                        <div className="flex flex-col items-center">
+                          <span className="text-[8px] font-black text-[#8b5a2b]/50 uppercase tracking-widest">Montant</span>
+                          <div className="flex items-baseline gap-0.5">
+                            <span className="font-black text-[#8b5a2b] text-base tabular-nums">{advance.montant?.toLocaleString()}</span>
+                            <span className="text-[8px] font-bold text-[#8b5a2b] opacity-40 uppercase">TND</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-center border-l border-[#c9b896]/20">
+                          <span className="text-[8px] font-black text-[#8b5a2b]/50 uppercase tracking-widest">Motif</span>
+                          <span className="font-black text-[#3d2c1e] text-xs truncate w-full text-center uppercase tracking-tight">{advance.motif}</span>
+                        </div>
+                      </div>
+
+                      {/* Bottom: Actions */}
+                      <div className="flex items-center justify-between px-1">
+                        <span className="text-[10px] font-black text-[#8b5a2b]/40 uppercase tracking-widest">ID: {employee.zktime_id || advance.user_id}</span>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-rose-500 h-8 font-black uppercase tracking-tighter text-[10px]"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDelete(advance.id);
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5 mr-1" />
+                            Supprimer
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })
+              ) : (
+                <div className="p-10 text-center text-[#6b5744] font-bold opacity-30 uppercase tracking-widest">AUCUNE AVANCE TROUVÉE</div>
+              )}
             </div>
           </Card>
         </div>
@@ -629,14 +722,16 @@ function AdvancesContent() {
 
       {/* ADD ADVANCE DIALOG */}
       <Dialog open={showAddForm} onOpenChange={setShowAddForm}>
-        <DialogContent className="bg-white border-[#c9b896] max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-bold text-[#8b5a2b]">Ajouter une Avance</DialogTitle>
-            <DialogDescription className="text-base text-[#6b5744]">
-              Sélectionner un employé et entrer les détails de l'avance
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleAddSubmit} className="space-y-5 mt-4">
+        <DialogContent className="bg-white border-[#c9b896] max-w-md w-[95vw] sm:w-full rounded-2xl p-0 overflow-hidden shadow-2xl">
+          <div className="bg-gradient-to-r from-[#8b5a2b] to-[#a0522d] p-6 text-white">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-black uppercase tracking-tighter">Ajouter une Avance</DialogTitle>
+              <DialogDescription className="text-white/80 font-bold text-xs uppercase tracking-widest">
+                DÉTAILS DU NOUVEAU PAIEMENT
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+          <form onSubmit={handleAddSubmit} className="p-5 sm:p-6 space-y-5">
             <div className="space-y-2">
               <Label htmlFor="date" className="text-base font-medium text-[#3d2c1e]">
                 Date
@@ -664,13 +759,13 @@ function AdvancesContent() {
                 </PopoverContent>
               </Popover>
             </div>
-            <div className="space-y-4 rounded-xl border border-[#c9b896]/30 bg-[#f8f6f1]/30 p-4 mt-2">
+            <div className="space-y-4 rounded-xl border border-[#c9b896]/20 bg-[#f8f6f1]/50 p-4">
               <div className="space-y-2">
-                <Label htmlFor="dialog-dept" className="text-sm font-bold text-[#8b5a2b] uppercase tracking-wider">
-                  Filtrer par Département
+                <Label htmlFor="dialog-dept" className="text-[10px] font-black text-[#8b5a2b] uppercase tracking-[0.2em] ml-1">
+                  Département
                 </Label>
                 <Select value={dialogDept} onValueChange={(val) => { setDialogDept(val); setSelectedUserId(""); }}>
-                  <SelectTrigger className="bg-white border-[#c9b896] text-[#3d2c1e] h-11 text-sm">
+                  <SelectTrigger className="bg-white border-[#c9b896]/30 text-[#3d2c1e] h-11 text-sm font-bold rounded-lg shadow-sm">
                     <SelectValue placeholder="Tous les départements" />
                   </SelectTrigger>
                   <SelectContent className="bg-white border-[#c9b896]">
@@ -683,38 +778,38 @@ function AdvancesContent() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="employee" className="text-sm font-bold text-[#8b5a2b] uppercase tracking-wider">
-                  Employé
+                <Label htmlFor="employee" className="text-[10px] font-black text-[#8b5a2b] uppercase tracking-[0.2em] ml-1">
+                  Sélectionner l'Employé
                 </Label>
-                <div className="flex items-center gap-4 bg-white p-2 rounded-xl border border-[#c9b896]/50 shadow-sm">
-                  <div className="h-10 w-10 rounded-lg bg-[#8b5a2b] flex items-center justify-center text-white font-black overflow-hidden shadow-md">
+                <div className="flex items-center gap-3 bg-white p-2 rounded-xl border border-[#c9b896]/30 shadow-sm min-h-[56px]">
+                  <div className="h-10 w-10 shrink-0 rounded-lg bg-gradient-to-br from-[#8b5a2b] to-[#a0522d] flex items-center justify-center text-white font-black overflow-hidden shadow-inner">
                     {(() => {
                       const user = users.find((u: any) => u.id === selectedUserId);
-                      return user?.photo ? <img src={user.photo} className="h-full w-full object-cover" /> : user?.username?.charAt(0) || "?";
+                      return user?.photo ? <img src={user.photo} className="h-full w-full object-cover" /> : <Plus className="h-5 w-5 opacity-40" />;
                     })()}
                   </div>
                   <Select value={selectedUserId} onValueChange={setSelectedUserId} required>
-                    <SelectTrigger className="border-none shadow-none focus:ring-0 text-[#3d2c1e] h-auto p-0 text-sm font-bold">
-                      <SelectValue placeholder="Sélectionner..." />
+                    <SelectTrigger className="border-none shadow-none focus:ring-0 text-[#3d2c1e] h-auto p-0 text-sm font-black flex-1 min-w-0">
+                      <SelectValue placeholder="Choisir un employé..." />
                     </SelectTrigger>
-                    <SelectContent className="bg-white border-[#c9b896] max-h-60">
+                    <SelectContent className="bg-white border-[#c9b896] max-h-[300px]">
                       {filteredUsersForDialog.length > 0 ? (
                         filteredUsersForDialog.map((user: any) => (
                           <SelectItem key={user.id} value={user.id} className="text-sm">
-                            <div className="flex items-center gap-2">
-                              <div className="h-6 w-6 rounded-full overflow-hidden bg-gray-100 border border-gray-200 flex items-center justify-center shrink-0">
+                            <div className="flex items-center gap-3">
+                              <div className="h-8 w-8 rounded-full overflow-hidden bg-gray-100 border border-gray-200 flex items-center justify-center shrink-0">
                                 {user.photo ? (
                                   <img src={user.photo} alt="" className="w-full h-full object-cover" />
                                 ) : (
-                                  <span className="text-[10px] font-bold text-gray-400">{user.username.charAt(0)}</span>
+                                  <span className="text-[10px] font-black text-[#8b5a2b]">{user.username.charAt(0).toUpperCase()}</span>
                                 )}
                               </div>
-                              <span>{user.username}</span>
+                              <span className="font-bold">{user.username}</span>
                             </div>
                           </SelectItem>
                         ))
                       ) : (
-                        <div className="p-4 text-center text-xs text-[#6b5744] opacity-50">Aucun employé</div>
+                        <div className="p-4 text-center text-xs font-bold text-[#8b5a2b] opacity-40">AUCUN EMPLOYÉ</div>
                       )}
                     </SelectContent>
                   </Select>
@@ -778,14 +873,16 @@ function AdvancesContent() {
 
       {/* EDIT ADVANCE DIALOG */}
       <Dialog open={showEditForm} onOpenChange={setShowEditForm}>
-        <DialogContent className="bg-white border-[#c9b896] max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-bold text-[#8b5a2b]">Modifier l'Avance</DialogTitle>
-            <DialogDescription className="text-base text-[#6b5744]">
-              Modifier les détails de l'avance
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleEditSubmit} className="space-y-5 mt-4">
+        <DialogContent className="bg-white border-[#c9b896] max-w-md w-[95vw] sm:w-full rounded-2xl p-0 overflow-hidden shadow-2xl">
+          <div className="bg-gradient-to-r from-[#8b5a2b] to-[#a0522d] p-6 text-white text-center">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-black uppercase tracking-tighter">Modifier l'Avance</DialogTitle>
+              <DialogDescription className="text-white/80 font-bold text-xs uppercase tracking-widest text-center">
+                MISE À JOUR DES DÉTAILS
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+          <form onSubmit={handleEditSubmit} className="p-5 sm:p-6 space-y-5">
             <div className="space-y-2">
               <Label htmlFor="edit-date" className="text-base font-medium text-[#3d2c1e]">
                 Date
@@ -861,18 +958,19 @@ function AdvancesContent() {
       </Dialog>
       {/* MAX USERS DIALOG */}
       <Dialog open={showMaxUsersDialog} onOpenChange={setShowMaxUsersDialog}>
-        <DialogContent className="bg-white border-[#c9b896] max-w-2xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-bold text-[#8b5a2b] flex items-center gap-2">
-              <AlertCircle className="h-6 w-6 text-red-600" />
-              Employés à Avance Maximale
-            </DialogTitle>
-            <DialogDescription className="text-base text-[#6b5744]">
-              Liste des employés ayant utilisé 80% ou plus de leur salaire en avances
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="mt-4 space-y-3">
+        <DialogContent className="bg-white border-[#c9b896] max-w-2xl w-[95vw] sm:w-full max-h-[90vh] overflow-y-auto p-0 rounded-2xl shadow-2xl">
+          <div className="bg-rose-600 p-6 text-white sticky top-0 z-10 shadow-md">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-black uppercase tracking-tighter flex items-center gap-3">
+                <AlertCircle className="h-7 w-7 animate-pulse" />
+                Seuils Maximaux
+              </DialogTitle>
+              <DialogDescription className="text-rose-100 font-bold text-[10px] uppercase tracking-[0.2em] mt-1">
+                EMPLOYÉS AYANT ATTEINT 80% OU PLUS DE LEUR SALAIRE
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+          <div className="p-4 sm:p-6 space-y-4">
             {usersAtMax.length === 0 ? (
               <div className="text-center py-8 text-[#6b5744]">
                 <AlertCircle className="h-12 w-12 mx-auto mb-3 text-emerald-500" />

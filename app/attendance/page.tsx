@@ -74,6 +74,22 @@ const SYNC_ATTENDANCE = gql`
     }
 `
 
+const GET_TOP_PERFORMERS = gql`
+  query GetTopPerformers($month: String!) {
+    getTopPerformers(month: $month) {
+      user {
+        id
+        username
+        photo
+        departement
+      }
+      totalHours
+      daysWorked
+      avgHoursPerDay
+    }
+  }
+`
+
 export default function AttendancePage() {
   return (
     <Suspense fallback={<div className="flex h-screen w-full items-center justify-center bg-[#fcfaf8] font-black uppercase tracking-widest text-[#8b5a2b] animate-pulse">Chargement des présences...</div>}>
@@ -152,9 +168,15 @@ function AttendanceContent() {
     notifyOnNetworkStatusChange: false,
   });
 
+  const payrollMonth = format(date, "yyyy_MM");
+  const { data: performersData, refetch: refetchPerformers } = useQuery(GET_TOP_PERFORMERS, {
+    variables: { month: payrollMonth }
+  });
+
   const [pardonLate] = useMutation(PARDON_LATE, {
     onCompleted: () => {
       refetch();
+      refetchPerformers();
     }
   });
 
@@ -278,24 +300,13 @@ function AttendanceContent() {
 
   // Calculate top 5 performers based on current month attendance
   const topPerformers = useMemo(() => {
-    // Use allPersonnel data which is already loaded
-    const users = allPersonnel
-      .filter((p: any) => p.user.role !== "admin") // Exclude admins
-      .map((p: any) => p.user);
-
-    if (users.length === 0) return [];
-
-    const performers = users.map((user: any) => {
-      // Calculate mock hours - in real implementation, fetch from userAttendanceHistory
-      const mockHours = Math.floor(Math.random() * 40) + 140; // 140-180 hours
-      return {
-        ...user,
-        totalHours: mockHours,
-        avgHoursPerDay: (mockHours / 20).toFixed(1)
-      };
-    }).sort((a: any, b: any) => b.totalHours - a.totalHours).slice(0, 5);
-    return performers;
-  }, [allPersonnel]); // Changed dependency to allPersonnel
+    if (!performersData?.getTopPerformers) return [];
+    return performersData.getTopPerformers.map((p: any) => ({
+      ...p.user,
+      totalHours: p.totalHours || 0,
+      avgHoursPerDay: p.avgHoursPerDay || 0
+    }));
+  }, [performersData]);
 
   const handleOpenPrime = (performer: any) => {
     setSelectedPerformer(performer);
@@ -380,7 +391,7 @@ function AttendanceContent() {
         <div className="p-6 sm:p-8 lg:p-10 space-y-8">
 
           {/* Stats Cards */}
-          <div className="grid gap-6 sm:gap-8 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-4 sm:gap-6 grid-cols-2 lg:grid-cols-5">
             <Card
               onClick={() => toggleFilter("Present")}
               className={cn(
@@ -526,65 +537,85 @@ function AttendanceContent() {
 
           {/* Top 5 Performers Card */}
           {canSee('attendance', 'top_performers') && (
-            <Card className="border-[#c9b896] bg-gradient-to-br from-amber-50 to-white p-6 shadow-lg rounded-xl border-2 border-amber-200">
-              <div className="flex items-center justify-between mb-4">
+            <Card className="border-[#c9b896] bg-gradient-to-br from-amber-50 to-white p-4 sm:p-6 shadow-lg rounded-xl border-2 border-amber-200">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                 <div className="flex items-center gap-3">
-                  <div className="p-3 bg-gradient-to-br from-amber-500 to-amber-600 rounded-xl">
-                    <Award className="h-6 w-6 text-white" />
+                  <div className="p-2 sm:p-3 bg-gradient-to-br from-amber-500 to-amber-600 rounded-lg sm:rounded-xl shrink-0 shadow-md">
+                    <Award className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
                   </div>
-                  <div>
-                    <h3 className="font-bold text-xl text-[#3d2c1e]">Top 5 Performers</h3>
-                    <p className="text-sm text-[#6b5744]">Meilleurs temps de travail du mois</p>
+                  <div className="min-w-0">
+                    <h3 className="font-black text-lg sm:text-xl text-[#3d2c1e] uppercase tracking-tighter truncate">Top 5 Performers</h3>
+                    <p className="text-[10px] sm:text-sm font-bold text-[#6b5744]/70 uppercase tracking-widest truncate">Performance Mensuelle</p>
                   </div>
                 </div>
                 <Button
                   onClick={() => setShowTopPerformers(!showTopPerformers)}
                   variant="outline"
-                  className="border-amber-300 text-amber-700 hover:bg-amber-100"
+                  className="w-full sm:w-auto border-amber-300 text-amber-700 hover:bg-amber-100 font-bold uppercase tracking-widest text-[10px] h-8"
                 >
-                  {showTopPerformers ? "Masquer" : "Voir"}
+                  {showTopPerformers ? "Masquer" : "Découvrir"}
                 </Button>
               </div>
 
               {showTopPerformers && (
-                <div className="space-y-3 mt-4">
+                <div className="grid grid-cols-1 md:grid-cols-1 lg:grid-cols-1 gap-3 mt-4">
                   {topPerformers.map((performer: any, index: number) => (
-                    <div key={performer.id} className="flex items-center justify-between p-4 bg-white rounded-lg border border-amber-200 hover:shadow-md transition-shadow">
-                      <div className="flex items-center gap-4 flex-1">
-                        <div className={`flex items-center justify-center w-10 h-10 rounded-full font-bold text-white shrink-0 ${index === 0 ? "bg-gradient-to-br from-yellow-400 to-yellow-600" :
-                          index === 1 ? "bg-gradient-to-br from-gray-300 to-gray-500" :
-                            index === 2 ? "bg-gradient-to-br from-amber-600 to-amber-800" :
+                    <div
+                      key={performer.id}
+                      className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-white rounded-xl border border-amber-200 hover:shadow-lg transition-all gap-4 sm:gap-2 group overflow-hidden relative"
+                    >
+                      {/* Left: Performer Identity */}
+                      <div className="flex items-center gap-3 sm:gap-4 flex-1">
+                        <div className={`flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-full font-bold text-white shrink-0 text-sm sm:text-base shadow-inner ${index === 0 ? "bg-gradient-to-br from-yellow-400 to-yellow-600 ring-2 ring-yellow-200" :
+                          index === 1 ? "bg-gradient-to-br from-gray-300 to-gray-500 ring-2 ring-gray-100" :
+                            index === 2 ? "bg-gradient-to-br from-amber-600 to-amber-800 ring-2 ring-amber-100" :
                               "bg-gradient-to-br from-[#8b5a2b] to-[#a0522d]"
                           }`}>
                           {index + 1}
                         </div>
-                        <div className="h-10 w-10 rounded-full bg-[#8b5a2b]/10 flex items-center justify-center text-[#8b5a2b] font-bold overflow-hidden border border-[#c9b896]/30 shrink-0">
+
+                        <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-[#8b5a2b]/5 flex items-center justify-center text-[#8b5a2b] font-bold overflow-hidden border border-[#c9b896]/30 shrink-0 group-hover:border-[#8b5a2b]/50 transition-colors">
                           {performer.photo ? (
                             <img src={performer.photo} alt={performer.username} className="w-full h-full object-cover" />
                           ) : (
-                            <Users className="h-5 w-5 opacity-40" />
+                            <div className="bg-[#8b5a2b]/10 w-full h-full flex items-center justify-center">
+                              <Users className="h-5 w-5 sm:h-6 sm:w-6 opacity-40" />
+                            </div>
                           )}
                         </div>
-                        <div className="flex-1">
-                          <h4 className="font-bold text-[#3d2c1e]">{performer.username}</h4>
-                          <p className="text-sm text-[#6b5744]">{performer.departement || "Non assigné"}</p>
-                        </div>
-                        <div className="text-right mr-4">
-                          <div className="flex items-center gap-2 text-amber-700">
-                            <TrendingUp className="h-4 w-4" />
-                            <span className="font-bold text-lg">{performer.totalHours}h</span>
-                          </div>
-                          <p className="text-xs text-[#6b5744]">{performer.avgHoursPerDay}h/jour</p>
+
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-black text-[#3d2c1e] text-sm sm:text-base truncate uppercase">{performer.username}</h4>
+                          <p className="text-[10px] sm:text-xs font-bold text-[#8b5a2b]/70 truncate tracking-tight uppercase">
+                            {performer.departement || "Personnel"}
+                          </p>
                         </div>
                       </div>
-                      <Button
-                        onClick={() => handleOpenPrime(performer)}
-                        size="sm"
-                        className="bg-gradient-to-r from-emerald-500 to-emerald-600 text-white hover:opacity-90"
-                      >
-                        <Award className="h-4 w-4 mr-1" />
-                        Prime
-                      </Button>
+
+                      {/* Right: Stats and Action */}
+                      <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-6 w-full sm:w-auto pt-3 sm:pt-0 border-t sm:border-t-0 border-amber-100 sm:border-transparent">
+                        <div className="flex flex-col sm:items-end">
+                          <div className="flex items-center gap-1.5 text-[#8b5a2b]">
+                            <TrendingUp className="h-4 w-4" />
+                            <span className="font-black text-base sm:text-lg tabular-nums tracking-tighter">{performer.totalHours}h</span>
+                          </div>
+                          <p className="text-[10px] sm:text-xs font-bold text-[#6b5744]/60 uppercase tracking-widest">{performer.avgHoursPerDay}h / JR</p>
+                        </div>
+
+                        <Button
+                          onClick={() => handleOpenPrime(performer)}
+                          size="sm"
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-9 px-4 sm:px-6 rounded-lg shadow-sm hover:shadow-md transition-all uppercase tracking-tighter text-xs"
+                        >
+                          <Award className="h-4 w-4 mr-1.5" />
+                          Prime
+                        </Button>
+                      </div>
+
+                      {/* Subtle background decoration for rank 1 */}
+                      {index === 0 && (
+                        <div className="absolute top-0 right-0 w-24 h-24 bg-yellow-400/5 -mr-12 -mt-12 rounded-full pointer-events-none" />
+                      )}
                     </div>
                   ))}
                 </div>
@@ -595,23 +626,24 @@ function AttendanceContent() {
           {/* Table Card */}
           <div ref={listRef}>
             <Card className="border-[#c9b896] bg-white shadow-xl rounded-2xl overflow-hidden">
-              <div className="overflow-x-auto">
+              {/* Desktop View Table */}
+              <div className="hidden min-[1100px]:block overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-[#f8f6f1] border-b border-[#c9b896]">
                       <th className="px-6 py-5 font-bold text-[#8b5a2b] uppercase tracking-widest text-sm text-center w-24">Zinc</th>
                       <th className="px-6 py-5 font-bold text-[#8b5a2b] uppercase tracking-widest text-sm">Employé</th>
                       <th className="px-6 py-5 font-bold text-[#8b5a2b] uppercase tracking-widest text-sm">Département</th>
-                      <th className="px-6 py-5 font-bold text-[#8b5a2b] uppercase tracking-widest text-sm">Entrée</th>
-                      <th className="px-6 py-5 font-bold text-[#8b5a2b] uppercase tracking-widest text-sm">Sortie</th>
-                      <th className="px-6 py-5 font-bold text-[#8b5a2b] uppercase tracking-widest text-sm">Shift</th>
-                      <th className="px-6 py-5 font-bold text-[#8b5a2b] uppercase tracking-widest text-sm text-center">Heures</th>
+                      <th className="px-6 py-5 font-bold text-[#8b5a2b] uppercase tracking-widest text-sm text-center">Entrée</th>
+                      <th className="px-6 py-5 font-bold text-[#8b5a2b] uppercase tracking-widest text-sm text-center">Sortie</th>
+                      <th className="px-6 py-5 font-bold text-[#8b5a2b] uppercase tracking-widest text-sm text-center">Shift</th>
+                      <th className="px-6 py-5 font-bold text-[#8b5a2b] uppercase tracking-widest text-sm text-center font-black">Heures</th>
                       <th className="px-6 py-5 font-bold text-[#8b5a2b] uppercase tracking-widest text-sm">Statut</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#c9b896]/30">
                     {loading ? (
-                      <tr><td colSpan={7} className="p-20 text-center text-[#6b5744] text-xl font-bold animate-pulse">Chargement des présences...</td></tr>
+                      <tr><td colSpan={8} className="p-20 text-center text-[#6b5744] text-xl font-bold animate-pulse">Chargement des présences...</td></tr>
                     ) : filteredPersonnel.length > 0 ? (
                       filteredPersonnel.map((person: any) => (
                         <tr key={person.user.id} id={`user-row-${person.user.id}`} className="hover:bg-[#f8f6f1]/50 transition-colors group">
@@ -627,7 +659,7 @@ function AttendanceContent() {
                               onClick={() => (person.state === "Retard" || person.state === "Absent" || person.state === "Missing_Exit") && handlePardonClick(person)}
                             >
                               <div className={cn(
-                                "h-10 w-10 rounded-full bg-gradient-to-br from-[#8b5a2b] to-[#c9b896] flex items-center justify-center text-white font-black text-sm shadow-md overflow-hidden border border-[#c9b896]/30 transition-transform",
+                                "h-11 w-11 rounded-full bg-gradient-to-br from-[#8b5a2b] to-[#c9b896] flex items-center justify-center text-white font-black text-sm shadow-md overflow-hidden border border-[#c9b896]/30 transition-transform",
                                 (person.state === "Retard" || person.state === "Absent" || person.state === "Missing_Exit") && "group-hover/item:scale-110 group-hover/item:border-[#8b5a2b] ring-offset-2 group-hover/item:ring-2 ring-amber-400"
                               )}>
                                 {person.user.photo ? (
@@ -636,28 +668,31 @@ function AttendanceContent() {
                                   person.user.username?.substring(0, 2).toUpperCase()
                                 )}
                               </div>
-                              <span className={cn(
-                                "font-bold text-[#3d2c1e] text-lg transition-colors",
-                                (person.state === "Retard" || person.state === "Absent" || person.state === "Missing_Exit") && "group-hover/item:text-[#8b5a2b]"
-                              )}>{person.user.username}</span>
+                              <div className="flex flex-col">
+                                <span className={cn(
+                                  "font-bold text-[#3d2c1e] text-lg transition-colors leading-tight",
+                                  (person.state === "Retard" || person.state === "Absent" || person.state === "Missing_Exit") && "group-hover/item:text-[#8b5a2b]"
+                                )}>{person.user.username}</span>
+                                <span className="text-[10px] text-[#8b5a2b] opacity-60 font-black uppercase tracking-widest">{person.user.zktime_id ? `ID: ${person.user.zktime_id}` : ""}</span>
+                              </div>
                             </div>
                           </td>
                           <td className="px-6 py-4">
-                            <span className="text-[#6b5744] font-medium px-3 py-1 bg-[#8b5a2b]/5 rounded-lg border border-[#8b5a2b]/10">{person.user.departement || "Non défini"}</span>
+                            <span className="text-[#6b5744] font-bold text-xs uppercase tracking-widest px-3 py-1 bg-[#8b5a2b]/5 rounded-lg border border-[#8b5a2b]/10 whitespace-nowrap">{person.user.departement || "Non défini"}</span>
                           </td>
-                          <td className="px-6 py-4">
+                          <td className="px-6 py-4 text-center">
                             <div className="font-mono font-black text-[#3d2c1e] text-lg">{person.clockIn || "--:--"}</div>
                           </td>
-                          <td className="px-6 py-4">
+                          <td className="px-6 py-4 text-center">
                             <div className="font-mono font-black text-[#3d2c1e] text-lg">{person.clockOut || "--:--"}</div>
                           </td>
-                          <td className="px-6 py-4">
+                          <td className="px-6 py-4 text-center">
                             <span className={cn(
-                              "px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-tighter shadow-sm",
-                              person.shift === "Soir" ? "bg-indigo-100 text-indigo-700 border border-indigo-200" :
-                                person.shift === "Matin" ? "bg-amber-100 text-amber-700 border border-amber-200" :
-                                  person.shift === "Doublage" ? "bg-purple-100 text-purple-700 border border-purple-200" :
-                                    "bg-gray-100 text-gray-600 border border-gray-200"
+                              "px-3 py-1 rounded-md text-[10px] font-black uppercase tracking-tighter shadow-sm border",
+                              person.shift === "Soir" ? "bg-indigo-50 text-indigo-700 border-indigo-100" :
+                                person.shift === "Matin" ? "bg-amber-50 text-amber-700 border-amber-100" :
+                                  person.shift === "Doublage" ? "bg-purple-50 text-purple-700 border-purple-100" :
+                                    "bg-gray-50 text-gray-500 border-gray-100"
                             )}>
                               {person.shift || "—"}
                             </span>
@@ -665,8 +700,8 @@ function AttendanceContent() {
                           <td className="px-6 py-4 text-center">
                             {person.workedHours ? (
                               <div className="flex flex-col items-center">
-                                <span className="text-lg font-black text-emerald-700 leading-none">{person.workedHours.split(' ')[0]}</span>
-                                <span className="text-[10px] font-bold text-[#8b5a2b] opacity-40 uppercase">{person.workedHours.split(' ')[1]}</span>
+                                <span className="text-xl font-black text-emerald-700 leading-none">{person.workedHours.split(' ')[0]}</span>
+                                <span className="text-[10px] font-bold text-[#8b5a2b] opacity-40 uppercase tracking-tighter">{person.workedHours.split(' ')[1]}</span>
                               </div>
                             ) : (
                               <span className="text-[#8b5a2b]/20">—</span>
@@ -694,10 +729,94 @@ function AttendanceContent() {
                         </tr>
                       ))
                     ) : (
-                      <tr><td colSpan={7} className="p-20 text-center text-[#6b5744] text-xl italic opacity-50">Aucune donnée pour cette sélection.</td></tr>
+                      <tr><td colSpan={8} className="p-20 text-center text-[#6b5744] text-xl italic opacity-50">Aucune donnée pour cette sélection.</td></tr>
                     )}
                   </tbody>
                 </table>
+              </div>
+
+              {/* Mobile Card View */}
+              <div className="min-[1100px]:hidden flex flex-col divide-y divide-[#c9b896]/20">
+                {loading ? (
+                  <div className="p-20 text-center text-[#8b5a2b] font-black animate-pulse">CHARGEMENT DES PRÉSENCES...</div>
+                ) : filteredPersonnel.length > 0 ? (
+                  filteredPersonnel.map((person: any) => (
+                    <div
+                      key={person.user.id}
+                      id={`user-row-mobile-${person.user.id}`}
+                      className="p-4 bg-white flex flex-col gap-4 active:bg-[#f8f6f1] transition-colors"
+                      onClick={() => (person.state === "Retard" || person.state === "Absent" || person.state === "Missing_Exit") && handlePardonClick(person)}
+                    >
+                      {/* Top Row: User + Status */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="h-12 w-12 rounded-full bg-gradient-to-br from-[#8b5a2b] to-[#c9b896] p-[1px] shadow-md border border-[#c9b896]/30 overflow-hidden shrink-0">
+                            {person.user.photo ? (
+                              <img src={person.user.photo} alt={person.user.username} className="w-full h-full object-cover rounded-full" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-white font-black text-sm uppercase">
+                                {person.user.username?.substring(0, 2)}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex flex-col min-w-0">
+                            <h4 className="font-black text-[#3d2c1e] text-base truncate uppercase leading-tight">{person.user.username}</h4>
+                            <span className="text-[10px] font-bold text-[#8b5a2b]/70 uppercase tracking-widest">{person.user.departement || "Personnel"}</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-1">
+                          <span className={cn(
+                            "px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border",
+                            (person.state === "Présent" || person.state === "Retard")
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              : person.state === "Repos"
+                                ? "bg-slate-50 text-slate-500 border-slate-200"
+                                : "bg-rose-50 text-rose-700 border-rose-200"
+                          )}>
+                            {person.state}
+                          </span>
+                          {person.state === "Retard" && person.delay && (
+                            <span className="text-[9px] font-black text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-200 animate-pulse whitespace-nowrap">
+                              -{person.delay}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Stats Row: Inputs/Outputs */}
+                      <div className="grid grid-cols-3 gap-2 bg-[#f8f6f1]/50 p-3 rounded-xl border border-[#c9b896]/10">
+                        <div className="flex flex-col items-center">
+                          <span className="text-[8px] font-black text-[#8b5a2b]/50 uppercase tracking-widest">Entrée</span>
+                          <span className="font-mono font-black text-[#3d2c1e] text-sm">{person.clockIn || "--:--"}</span>
+                        </div>
+                        <div className="flex flex-col items-center border-x border-[#c9b896]/20">
+                          <span className="text-[8px] font-black text-[#8b5a2b]/50 uppercase tracking-widest">Sortie</span>
+                          <span className="font-mono font-black text-[#3d2c1e] text-sm">{person.clockOut || "--:--"}</span>
+                        </div>
+                        <div className="flex flex-col items-center">
+                          <span className="text-[8px] font-black text-[#8b5a2b]/50 uppercase tracking-widest">Heures</span>
+                          <span className="font-black text-emerald-700 text-sm leading-tight">{person.workedHours || "—"}</span>
+                        </div>
+                      </div>
+
+                      {/* Footer Row: ID + Shift */}
+                      <div className="flex items-center justify-between px-1">
+                        <span className="text-[10px] font-black text-[#8b5a2b]/40 uppercase">ID: {person.user.zktime_id || person.user.id}</span>
+                        <span className={cn(
+                          "px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-tighter border",
+                          person.shift === "Soir" ? "bg-indigo-50 text-indigo-700 border-indigo-100" :
+                            person.shift === "Matin" ? "bg-amber-50 text-amber-700 border-amber-100" :
+                              person.shift === "Doublage" ? "bg-purple-50 text-purple-700 border-purple-100" :
+                                "bg-gray-50 text-gray-500 border-gray-100"
+                        )}>
+                          Shift: {person.shift || "—"}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="p-10 text-center text-[#6b5744] italic opacity-50">Aucun résultat.</div>
+                )}
               </div>
             </Card>
 
