@@ -355,20 +355,14 @@ const ensureNotificationsTable = async () => {
         url TEXT
       )
     `);
-    // Ensure columns exist (sequential to avoid connection issues)
+    // Ensure columns exist
     try {
       await pool.query('ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS user_done VARCHAR(255)');
-    } catch (e) { }
-    try {
       await pool.query('ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS url TEXT');
     } catch (e) { }
-    // Performance indexes (sequential)
-    try {
-      await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON public.notifications(user_id)`);
-    } catch (e) { }
-    try {
-      await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_timestamp ON public.notifications(timestamp DESC)`);
-    } catch (e) { }
+    // Performance indexes
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON public.notifications(user_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_timestamp ON public.notifications(timestamp DESC)`);
     notificationsTableCreated = true;
   } catch (e) {
     console.error("Table Creation Error:", e);
@@ -493,20 +487,11 @@ const ensureStaticIndexes = async () => {
       `CREATE INDEX IF NOT EXISTS idx_doublages_user_id_date ON public.doublages(user_id, date)`,
       `CREATE INDEX IF NOT EXISTS idx_avances_statut ON public.avances(statut)`,
     ];
-    // Run sequentially to avoid exhausting connection pool
-    for (const query of queries) {
-      try {
-        await pool.query(query);
-      } catch (e) {
-        // Ignore errors for individual indexes (table might not exist yet)
-      }
-    }
+    await Promise.all(queries.map(q => pool.query(q)));
   } catch (e) { console.error("Index creation error:", e); }
 };
-// DISABLED: Run once on module load (lazy)
-// This was causing "too many clients" errors on databases with low max_connections
-// Indexes will be created manually or on-demand instead
-// ensureStaticIndexes();
+// Run once on module load (lazy)
+ensureStaticIndexes();
 
 const fetchDayPunches = async (logicalDate: Date, userId: string | null = null) => {
   // Construct table names
