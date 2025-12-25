@@ -355,14 +355,20 @@ const ensureNotificationsTable = async () => {
         url TEXT
       )
     `);
-    // Ensure columns exist
+    // Ensure columns exist (sequential to avoid connection issues)
     try {
       await pool.query('ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS user_done VARCHAR(255)');
+    } catch (e) { }
+    try {
       await pool.query('ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS url TEXT');
     } catch (e) { }
-    // Performance indexes
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON public.notifications(user_id)`);
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_timestamp ON public.notifications(timestamp DESC)`);
+    // Performance indexes (sequential)
+    try {
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON public.notifications(user_id)`);
+    } catch (e) { }
+    try {
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_timestamp ON public.notifications(timestamp DESC)`);
+    } catch (e) { }
     notificationsTableCreated = true;
   } catch (e) {
     console.error("Table Creation Error:", e);
@@ -487,7 +493,14 @@ const ensureStaticIndexes = async () => {
       `CREATE INDEX IF NOT EXISTS idx_doublages_user_id_date ON public.doublages(user_id, date)`,
       `CREATE INDEX IF NOT EXISTS idx_avances_statut ON public.avances(statut)`,
     ];
-    await Promise.all(queries.map(q => pool.query(q)));
+    // Run sequentially to avoid exhausting connection pool
+    for (const query of queries) {
+      try {
+        await pool.query(query);
+      } catch (e) {
+        // Ignore errors for individual indexes (table might not exist yet)
+      }
+    }
   } catch (e) { console.error("Index creation error:", e); }
 };
 // Run once on module load (lazy)
