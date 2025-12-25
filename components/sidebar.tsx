@@ -23,7 +23,7 @@ export function Sidebar() {
 
       if (u?.permissions) {
         try {
-          setPermissions(JSON.parse(u.permissions));
+          setPermissions(JSON.parse(u.permissions) || {});
         } catch (e) { setPermissions({}) }
       } else {
         setPermissions({})

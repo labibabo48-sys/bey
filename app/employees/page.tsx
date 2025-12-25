@@ -138,10 +138,10 @@ function EmployeesContent() {
   const currentUser = getCurrentUser();
   let permissions: any = {};
   if (currentUser?.permissions) {
-    try { permissions = JSON.parse(currentUser.permissions); } catch (e) { }
+    try { permissions = JSON.parse(currentUser.permissions) || {}; } catch (e) { }
   }
 
-  const canAddEmployee = currentUser?.role === 'admin' || permissions.employees?.add_employee !== false;
+  const canAddEmployee = currentUser?.role === 'admin' || permissions?.employees?.add_employee !== false;
 
   const [updateUser] = useMutation(UPDATE_USER);
 

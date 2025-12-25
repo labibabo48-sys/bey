@@ -203,7 +203,7 @@ export default function ManagementPage() {
         setEditPassword("")
         if (user.permissions) {
             try {
-                const parsed = JSON.parse(user.permissions);
+                const parsed = JSON.parse(user.permissions) || {};
                 setPermissions({
                     ...initialPermissions,
                     ...parsed,

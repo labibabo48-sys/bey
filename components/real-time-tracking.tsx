@@ -86,8 +86,8 @@ export function RealTimeTracking({ initialData }: { initialData?: any }) {
   });
 
   const sessionUser = getCurrentUser();
-  const permissions = sessionUser?.permissions ? JSON.parse(sessionUser.permissions) : {};
-  const canPardon = permissions.attendance?.pardon !== false;
+  const permissions = sessionUser?.permissions ? (JSON.parse(sessionUser.permissions) || {}) : {};
+  const canPardon = (permissions?.attendance?.pardon) !== false;
 
   const handlePardonClick = (emp: any) => {
     if (!canPardon) return;

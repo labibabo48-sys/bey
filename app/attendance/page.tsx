@@ -112,7 +112,7 @@ function AttendanceContent() {
   const currentUser = getCurrentUser();
   let permissions: any = {};
   if (currentUser?.permissions) {
-    try { permissions = JSON.parse(currentUser.permissions); } catch (e) { }
+    try { permissions = JSON.parse(currentUser.permissions) || {}; } catch (e) { }
   }
   const canSee = (cat: string, key: string) => {
     if (currentUser?.role === 'admin') return true;
