@@ -2818,9 +2818,15 @@ const resolvers = {
 
         if (departement === 'Chef_Cuisine') {
           targetClockIn = "11:00";
+          if (!targetClockOut) targetClockOut = "22:00";
         } else {
-          if (shiftType === "Soir") targetClockIn = "16:00";
-          else targetClockIn = "07:00";
+          if (shiftType === "Soir") {
+            targetClockIn = "16:00";
+            if (!targetClockOut) targetClockOut = "23:00";
+          } else {
+            targetClockIn = "07:00";
+            if (!targetClockOut) targetClockOut = "16:00";
+          }
         }
 
         // Only override clock_out if user is already finished or if they specifically left early causing issues
@@ -2832,12 +2838,13 @@ const resolvers = {
 
       await pool.query(
         `UPDATE public."${tableName}" 
-         SET retard = 0, infraction = 0, clock_in = $2, clock_out = $3, remarque = 'Pardonné', updated = TRUE 
+         SET present = 1, retard = 0, infraction = 0, clock_in = $2, clock_out = $3, remarque = 'Pardonné', updated = TRUE 
          WHERE id = $1`,
         [record.id, targetClockIn, targetClockOut]
       );
 
       await pool.query('DELETE FROM public.retards WHERE user_id = $1 AND date::date = $2::date', [userId, dateSQL]);
+      await pool.query('DELETE FROM public.absents WHERE user_id = $1 AND date::date = $2::date', [userId, dateSQL]);
       await pool.query(`DELETE FROM public.extras WHERE user_id = $1 AND date_extra::date = $2::date AND LOWER(motif) LIKE 'infraction%'`, [userId, dateSQL]);
 
       await createNotification('system', "Pointage Pardonné", `Le retard de ${username} pour le ${dateSQL} a été annulé (Pardon).`, userId, context.userDone);

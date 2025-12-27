@@ -268,48 +268,103 @@ function EmployeesContent() {
     })
   }
 
-  const handleCinFrontFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const compressImage = (file: File, maxWidth = 1200, quality = 0.7): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > maxWidth) {
+              height = Math.round((height * maxWidth) / width);
+              width = maxWidth;
+            }
+          } else {
+            if (height > maxWidth) {
+              width = Math.round((width * maxWidth) / height);
+              height = maxWidth;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          ctx?.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL("image/jpeg", quality));
+        };
+        img.onerror = (err) => reject(err);
+      };
+      reader.onerror = (err) => reject(err);
+    });
+  };
+
+  const handleCinFrontFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      if (file.size > 2 * 1024 * 1024) {
-        alert("L'image est trop grande (max 2Mo)")
+      if (file.size > 10 * 1024 * 1024) {
+        alert("L'image est trop grande (max 10Mo)")
         return
       }
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        setFormData({ ...formData, cinPhotoFront: reader.result as string })
+      try {
+        const compressed = await compressImage(file, 1600, 0.8);
+        setFormData({ ...formData, cinPhotoFront: compressed })
+      } catch (e) {
+        console.error("Compression error:", e);
+        // Fallback to original if compression fails
+        const reader = new FileReader()
+        reader.onloadend = () => {
+          setFormData({ ...formData, cinPhotoFront: reader.result as string })
+        }
+        reader.readAsDataURL(file)
       }
-      reader.readAsDataURL(file)
     }
   }
 
-  const handleCinBackFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCinBackFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      if (file.size > 2 * 1024 * 1024) {
-        alert("L'image est trop grande (max 2Mo)")
+      if (file.size > 10 * 1024 * 1024) {
+        alert("L'image est trop grande (max 10Mo)")
         return
       }
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        setFormData({ ...formData, cinPhotoBack: reader.result as string })
+      try {
+        const compressed = await compressImage(file, 1600, 0.8);
+        setFormData({ ...formData, cinPhotoBack: compressed })
+      } catch (e) {
+        console.error("Compression error:", e);
+        const reader = new FileReader()
+        reader.onloadend = () => {
+          setFormData({ ...formData, cinPhotoBack: reader.result as string })
+        }
+        reader.readAsDataURL(file)
       }
-      reader.readAsDataURL(file)
     }
   }
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      if (file.size > 1024 * 1024) { // 1MB limit for Base64 efficiency
-        alert("L'image est trop grande (max 1Mo)")
+      if (file.size > 10 * 1024 * 1024) { // 10MB limit
+        alert("L'image est trop grande (max 10Mo)")
         return
       }
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        setFormData({ ...formData, photo: reader.result as string })
+      try {
+        const compressed = await compressImage(file, 800, 0.7); // Smaller for profile photo
+        setFormData({ ...formData, photo: compressed })
+      } catch (e) {
+        console.error("Compression error:", e);
+        const reader = new FileReader()
+        reader.onloadend = () => {
+          setFormData({ ...formData, photo: reader.result as string })
+        }
+        reader.readAsDataURL(file)
       }
-      reader.readAsDataURL(file)
     }
   }
 
