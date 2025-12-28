@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "build": "next build",
-    "dev": "WATCHPACK_POLLING=true NODE_OPTIONS='--no-deprecation' next dev",
+    "dev": "WATCHPACK_POLLING=true NODE_NO_WARNINGS=1 next dev",
     "lint": "eslint .",
     "start": "next start"
   },
