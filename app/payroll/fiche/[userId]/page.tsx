@@ -27,7 +27,7 @@ import { ChevronLeft, FileText, Printer, Save, RefreshCw, AlertCircle, TrendingU
 import { useState, useMemo, useEffect } from "react"
 import { gql, useQuery, useMutation } from "@apollo/client"
 import { useParams, useRouter } from "next/navigation"
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth } from "date-fns"
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, parseISO } from "date-fns"
 import { fr } from "date-fns/locale"
 import { NotificationBell } from "@/components/notification-bell"
 import { cn } from "@/lib/utils"
@@ -45,6 +45,7 @@ const GET_USER_DATA = gql`
     }
   }
 `
+
 
 const GET_PAYROLL = gql`
   query GetPayroll($month: String!, $userId: ID) {
@@ -108,6 +109,7 @@ export default function UserFichePage() {
     })
     const user = userData?.getUser
 
+
     const { data: payrollData, refetch: refetchPayroll, loading: loadingPayroll, error: payrollError } = useQuery(GET_PAYROLL, {
         variables: {
             month: selectedMonth,
@@ -162,15 +164,41 @@ export default function UserFichePage() {
     // Calculations
     const stats = useMemo(() => {
         const totalDays = payroll.reduce((sum: number, r: any) => sum + (r.present ? 1 : 0), 0)
-        const totalAbsents = payroll.filter((r: any) => r.present === 0).length
         const totalRetardMins = payroll.reduce((sum: number, r: any) => sum + (r.retard || 0), 0)
-
         // Rule: Each retard > 30 mins = -30 DT (Handled in DB via infraction column)
         const retardPenaltyTotal = payroll.reduce((sum: number, r: any) => sum + (r.retard > 30 ? 30 : 0), 0)
 
+        const [y, m] = selectedMonth.split('_').map(Number)
+        const daysInMonth = new Date(y, m, 0).getDate()
         const baseSalary = user?.base_salary || 0
-        const dayValue = baseSalary / 30
-        const calculatedSalary = dayValue * totalDays
+        const dayValue = baseSalary / daysInMonth
+
+        const today = new Date()
+        const isCurrentMonth = format(today, 'yyyy_MM') === selectedMonth
+        const todayStr = format(today, 'yyyy-MM-dd')
+
+        const totalAbsents = payroll.filter((r: any) => {
+            if (isCurrentMonth) return r.date <= todayStr && r.present === 0
+            return r.present === 0
+        }).length
+
+        const totalPassed = payroll.filter((r: any) => {
+            if (isCurrentMonth) return r.date <= todayStr
+            return true
+        }).length
+
+        const workedDaysCount = payroll.filter((r: any) => {
+            if (isCurrentMonth) return r.date <= todayStr && r.present === 1
+            return r.present === 1
+        }).length
+
+        const extraDaysCount = payroll.filter((r: any) => (r.extra || 0) > 0).length
+        const effectivePassed = Math.max(0, totalPassed - extraDaysCount)
+        const effectiveWorked = Math.max(0, workedDaysCount - extraDaysCount)
+
+        // Rule: If absences > 4, only pay for WORKED days (minus extras). If absences <= 4, pay for PASSED days (minus extras).
+        const paidDays = totalAbsents > 4 ? effectiveWorked : effectivePassed
+        const calculatedSalary = paidDays * dayValue
 
         const totalAdvances = payroll.reduce((sum: number, r: any) => sum + (r.acompte || 0), 0)
         const totalPrimes = payroll.reduce((sum: number, r: any) => sum + (r.prime || 0), 0)
@@ -182,17 +210,17 @@ export default function UserFichePage() {
         const netSalary = calculatedSalary - totalInfractions - totalAdvances
 
         return {
-            totalDays,
+            totalDays: workedDaysCount,
             totalAbsents,
-            totalRetardMins,
-            retardPenaltyTotal,
-            calculatedSalary,
-            totalAdvances,
-            totalPrimes,
-            totalInfractions,
-            totalExtras,
-            totalDoublages,
-            netSalary
+            totalRetardMins: totalRetardMins,
+            retardPenaltyTotal: retardPenaltyTotal,
+            calculatedSalary: calculatedSalary,
+            totalAdvances: totalAdvances,
+            totalPrimes: totalPrimes,
+            totalInfractions: totalInfractions,
+            totalExtras: totalExtras,
+            totalDoublages: totalDoublages,
+            netSalary: netSalary
         }
     }, [payroll, user, selectedMonth])
 

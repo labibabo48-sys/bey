@@ -26,7 +26,7 @@ import { useSearchParams, useRouter } from "next/navigation"
 import { NotificationBell } from "@/components/notification-bell"
 import { getCurrentUser } from "@/lib/mock-data"
 import { gql, useQuery, useMutation } from "@apollo/client"
-import { format } from "date-fns"
+import { format, parseISO } from "date-fns"
 import { fr } from "date-fns/locale"
 import { cn } from "@/lib/utils"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -58,6 +58,9 @@ const GET_PAYROLL_PAGE = gql`
       retard
       remarque
       doublage
+      clock_in
+      clock_out
+      paid
     }
     getAllSchedules {
       user_id
@@ -72,8 +75,10 @@ const GET_PAYROLL_PAGE = gql`
     getExtras(month: $month) {
       id
       user_id
+      username
       montant
       date_extra
+      motif
     }
     getDoublages(month: $month) {
       id
@@ -107,29 +112,45 @@ const INIT_PAYROLL = gql`
   }
 `
 
+const PAY_USER = gql`
+  mutation PayUser($month: String!, $userId: ID!) {
+    payUser(month: $month, userId: $userId)
+  }
+`
 
-// Helper to calculate stats
+
 const calculateUserStats = (user: any, userRecords: any[], userSchedule: any, monthDate: Date) => {
-  const totalDays = userRecords.length;
-
-  const presentDays = userRecords.filter((r: any) => r.present === 1).length;
+  const baseSalary = Number(user.base_salary || 0);
+  const daysInMonth = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate();
+  const dayValue = baseSalary / daysInMonth;
 
   const now = new Date();
-  if (now.getHours() < 4) {
-    now.setDate(now.getDate() - 1);
-  }
-  const yesterday = new Date(now);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = format(yesterday, 'yyyy-MM-dd');
+  const todayStr = format(now, 'yyyy-MM-dd');
+  const isCurrentMonth = format(monthDate, 'yyyy-MM') === format(now, 'yyyy-MM');
 
   const absentDays = userRecords.filter((r: any) => {
-    return r.date <= yesterdayStr && r.present === 0;
-  }).length;
+    if (isCurrentMonth) return r.date <= todayStr && r.present === 0
+    return r.present === 0
+  }).length
 
-  const baseSalary = user.base_salary || 0;
-  const dayValue = baseSalary / 30;
+  const passedDays = userRecords.filter((r: any) => {
+    if (isCurrentMonth) return r.date <= todayStr
+    return true
+  }).length
 
-  const calculatedSalary = baseSalary - (absentDays * dayValue);
+  const workedDaysCount = userRecords.filter((r: any) => {
+    if (isCurrentMonth) return r.date <= todayStr && r.present === 1
+    return r.present === 1
+  }).length
+
+  // New Rule: Exclude days with immediate Extra payout from the monthly salary count
+  const extraDaysCount = userRecords.filter((r: any) => (r.extra || 0) > 0).length
+  const effectivePassed = Math.max(0, passedDays - extraDaysCount)
+  const effectiveWorked = Math.max(0, workedDaysCount - extraDaysCount)
+
+  // Rule: If absences > 4, only pay for WORKED days (minus extras). If absences <= 4, pay for PASSED days (minus extras).
+  const paidDays = absentDays > 4 ? effectiveWorked : effectivePassed;
+  const calculatedSalary = paidDays * dayValue;
 
   const totalPrimes = userRecords.reduce((sum: number, r: any) => sum + (r.prime || 0), 0);
   const totalExtras = userRecords.reduce((sum: number, r: any) => sum + (r.extra || 0), 0);
@@ -138,13 +159,13 @@ const calculateUserStats = (user: any, userRecords: any[], userSchedule: any, mo
   const totalRetardMins = userRecords.reduce((sum: number, r: any) => sum + (r.retard || 0), 0);
   const totalDoublages = userRecords.reduce((sum: number, r: any) => sum + (r.doublage || 0), 0);
 
-  const deductions = totalInfractions + totalAdvances;
-  const netSalary = calculatedSalary + totalPrimes + totalExtras - deductions;
+  // Net Salary: Presence - Infractions - Advances
+  const netSalary = calculatedSalary - totalInfractions - totalAdvances;
 
   return {
     baseSalary,
     calculatedSalary,
-    presentDays,
+    presentDays: workedDaysCount,
     absentDays,
     totalPrimes,
     totalExtras,
@@ -153,7 +174,8 @@ const calculateUserStats = (user: any, userRecords: any[], userSchedule: any, mo
     totalDoublages,
     netSalary,
     totalRetardMins,
-    formattedRetard: totalRetardMins >= 60 ? `${Math.floor(totalRetardMins / 60)}h ${totalRetardMins % 60}m` : `${totalRetardMins} min`
+    formattedRetard: totalRetardMins >= 60 ? `${Math.floor(totalRetardMins / 60)}h ${totalRetardMins % 60}m` : `${totalRetardMins} min`,
+    isPaid: userRecords.some((r: any) => r.paid)
   };
 }
 
@@ -194,6 +216,25 @@ export default function PayrollPage() {
   // Polling removed as per user request
 
   const [initPayroll] = useMutation(INIT_PAYROLL)
+  const [payUser] = useMutation(PAY_USER, {
+    onCompleted: () => {
+      refetch();
+    }
+  });
+
+  const handlePay = async (userId: string) => {
+    if (!confirm("Voulez-vous marquer ce salaire comme payé ? Cette action est irréversible.")) return;
+    try {
+      await payUser({
+        variables: {
+          month: payrollMonthKey,
+          userId: userId
+        }
+      });
+    } catch (e: any) {
+      alert("Erreur: " + e.message);
+    }
+  };
 
   // Init payroll if empty result?
   // Warning: If we init automatically, we might overwrite?
@@ -219,9 +260,8 @@ export default function PayrollPage() {
   const payrollSummary = useMemo(() => {
     return users.map((user: any) => {
       const userRecords = payrollRecords.filter((r: any) => String(r.user_id) === String(user.id));
-      const userSchedule = schedules.find((s: any) => String(s.user_id) === String(user.id));
 
-      const stats = calculateUserStats(user, userRecords, userSchedule, selectedMonth);
+      const stats = calculateUserStats(user, userRecords, null, selectedMonth);
 
       return {
         userId: user.id,
@@ -230,16 +270,18 @@ export default function PayrollPage() {
         ...stats
       }
     })
-  }, [users, payrollRecords, schedules, selectedMonth]);
+  }, [users, payrollRecords, selectedMonth]);
 
   const globalStats = useMemo(() => {
     return {
-      totalPay: payrollSummary.reduce((acc: number, curr: any) => acc + curr.baseSalary, 0),
-      totalAdvances: payrollSummary.reduce((acc: number, curr: any) => acc + curr.totalAdvances, 0),
-      totalPrimes: payrollSummary.reduce((acc: number, curr: any) => acc + curr.totalPrimes, 0),
-      totalExtras: payrollSummary.reduce((acc: number, curr: any) => acc + curr.totalExtras, 0),
-      totalDoublages: payrollSummary.reduce((acc: number, curr: any) => acc + curr.totalDoublages, 0),
-      totalNet: payrollSummary.reduce((acc: number, curr: any) => acc + curr.netSalary, 0),
+      totalEmployees: payrollSummary.length,
+      totalBase: payrollSummary.reduce((acc: number, curr: any) => acc + (Number(curr.baseSalary) || 0), 0),
+      totalCalculated: payrollSummary.reduce((acc: number, curr: any) => acc + (Number(curr.calculatedSalary) || 0), 0),
+      totalAdvances: payrollSummary.reduce((acc: number, curr: any) => acc + (Number(curr.totalAdvances) || 0), 0),
+      totalPrimes: payrollSummary.reduce((acc: number, curr: any) => acc + (Number(curr.totalPrimes) || 0), 0),
+      totalExtras: payrollSummary.reduce((acc: number, curr: any) => acc + (Number(curr.totalExtras) || 0), 0),
+      totalDoublages: payrollSummary.reduce((acc: number, curr: any) => acc + (Number(curr.totalDoublages) || 0), 0),
+      totalNet: payrollSummary.reduce((acc: number, curr: any) => acc + (Number(curr.netSalary) || 0), 0),
     }
   }, [payrollSummary]);
 
@@ -309,8 +351,10 @@ export default function PayrollPage() {
   const [primeSearchTerm, setPrimeSearchTerm] = useState("")
   const [primeSelectedDepartment, setPrimeSelectedDepartment] = useState("all")
 
-  // Doublage View Dialog State
+  // Dialog States
   const [viewDoublagesOpen, setViewDoublagesOpen] = useState(false)
+  const [viewPrimesOpen, setViewPrimesOpen] = useState(false)
+  const [viewExtrasOpen, setViewExtrasOpen] = useState(false)
 
   const [addExtra, { loading: addingExtra }] = useMutation(ADD_EXTRA)
   const [addDoublage, { loading: addingDoublage }] = useMutation(ADD_DOUBLAGE)
@@ -783,10 +827,11 @@ export default function PayrollPage() {
           <div className="mb-6 sm:mb-8 grid gap-4 sm:gap-6 grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
             {canSee('payroll', 'stats_total_base') && (
               <Card className="border-[#c9b896] bg-white p-4 shadow-md">
-                <p className="text-sm text-[#6b5744]">Total Salaires Base</p>
-                <p className="text-2xl font-bold text-[#3d2c1e]">{Math.round(globalStats.totalPay)} DT</p>
+                <p className="text-sm text-[#6b5744]">Total Salaires Base ({globalStats.totalEmployees} employés)</p>
+                <p className="text-2xl font-bold text-[#3d2c1e]">{Math.round(globalStats.totalBase)} DT</p>
               </Card>
             )}
+
             {canSee('payroll', 'stats_avances') && (
               <Card className="border-[#c9b896] bg-white p-4 shadow-md">
                 <p className="text-sm text-[#6b5744]">Avances</p>
@@ -800,13 +845,19 @@ export default function PayrollPage() {
               </Card>
             )}
             {canSee('payroll', 'stats_primes') && (
-              <Card className="border-[#c9b896] bg-white p-4 shadow-md">
+              <Card
+                className="border-[#c9b896] bg-white p-4 shadow-md cursor-pointer hover:bg-[#f8f6f1] transition-colors"
+                onClick={() => setViewPrimesOpen(true)}
+              >
                 <p className="text-sm text-[#6b5744]">Total Primes</p>
                 <p className="text-2xl font-bold text-amber-600">{Math.round(globalStats.totalPrimes)} DT</p>
               </Card>
             )}
             {canSee('payroll', 'stats_extras') && (
-              <Card className="border-[#c9b896] bg-white p-4 shadow-md">
+              <Card
+                className="border-[#c9b896] bg-white p-4 shadow-md cursor-pointer hover:bg-[#f8f6f1] transition-colors"
+                onClick={() => setViewExtrasOpen(true)}
+              >
                 <p className="text-sm text-[#6b5744]">Total Extras</p>
                 <p className="text-2xl font-bold text-emerald-600">{Math.round(globalStats.totalExtras)} DT</p>
               </Card>
@@ -866,20 +917,23 @@ export default function PayrollPage() {
                 </thead>
                 <tbody>
                   {filteredPayrollSummary.map((p: any) => (
-                    <tr key={p.userId} id={`payroll-desktop-${p.userId}`} className="border-b border-[#c9b896]/30 hover:bg-[#f8f6f1]/50">
+                    <tr
+                      key={p.userId}
+                      id={`payroll-desktop-${p.userId}`}
+                      className={cn(
+                        "border-b border-[#c9b896]/30 hover:bg-[#f8f6f1]/50 transition-colors",
+                        p.isPaid ? "bg-emerald-100/60 hover:bg-emerald-200/60" : ""
+                      )}
+                    >
                       {canSee('payroll', 'col_employee') && (
-                        <td className="p-4">
+                        <td className="p-3 sm:p-4">
                           <button
                             onClick={() => canSee('payroll', 'user_details_modal') && openEmployeePlanning(p)}
                             className={`flex items-center gap-3 text-left ${!canSee('payroll', 'user_details_modal') ? 'cursor-default opacity-100' : ''}`}
                             disabled={!canSee('payroll', 'user_details_modal')}
                           >
-                            <div className="h-10 w-10 rounded-full bg-[#8b5a2b] flex items-center justify-center text-white font-bold overflow-hidden border border-[#c9b896]/30">
-                              {p.user.photo ? (
-                                <img src={p.user.photo} alt="" className="w-full h-full object-cover" />
-                              ) : (
-                                p.user.username?.charAt(0)
-                              )}
+                            <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-xl bg-[#8b5a2b] flex items-center justify-center text-white font-black overflow-hidden shadow-sm">
+                              {p.user.photo ? <img src={p.user.photo} className="h-full w-full object-cover" /> : p.user.username.charAt(0)}
                             </div>
                             <div>
                               <p className="font-semibold text-[#3d2c1e]">{p.user.username}</p>
@@ -898,8 +952,16 @@ export default function PayrollPage() {
                       {canSee('payroll', 'col_net') && <td className="p-4 font-bold text-lg text-[#3d2c1e]">{Math.round(p.netSalary)} DT</td>}
                       {canSee('payroll', 'col_action') && (
                         <td className="p-4">
-                          <Button size="sm" className="bg-emerald-600 text-white hover:bg-emerald-700">
-                            <CheckCircle2 className="mr-2 h-4 w-4" /> Payer
+                          <Button
+                            size="sm"
+                            className={cn(
+                              "text-white",
+                              p.isPaid ? "bg-emerald-800 opacity-50 cursor-not-allowed" : "bg-emerald-600 hover:bg-emerald-700"
+                            )}
+                            disabled={p.isPaid}
+                            onClick={() => handlePay(p.userId)}
+                          >
+                            <CheckCircle2 className="mr-2 h-4 w-4" /> {p.isPaid ? "Payé" : "Payer"}
                           </Button>
                         </td>
                       )}
@@ -912,7 +974,14 @@ export default function PayrollPage() {
             {/* Mobile List View */}
             <div className="md:hidden space-y-4">
               {filteredPayrollSummary.map((p: any) => (
-                <div key={p.userId} id={`payroll-mobile-${p.userId}`} className="bg-white border border-[#c9b896] rounded-xl p-4 shadow-sm flex flex-col gap-3">
+                <div
+                  key={p.userId}
+                  id={`payroll-mobile-${p.userId}`}
+                  className={cn(
+                    "bg-white border border-[#c9b896] rounded-xl p-4 shadow-sm flex flex-col gap-3",
+                    p.isPaid && "bg-emerald-50 border-emerald-200"
+                  )}
+                >
                   <div className="flex items-center justify-between">
                     <button
                       onClick={() => canSee('payroll', 'user_details_modal') && openEmployeePlanning(p)}
@@ -1189,14 +1258,17 @@ export default function PayrollPage() {
                       {Math.round(selectedEmployee?.netSalary || 0)} DT
                     </span>
                     <Button
-                      onClick={() => {
-                        // Handle pay
-                        setPlanningDialogOpen(false)
-                      }}
-                      className="w-full bg-gradient-to-r from-emerald-600 to-emerald-700 text-white h-10 sm:h-11 lg:h-12 text-sm sm:text-base lg:text-lg font-semibold"
+                      onClick={() => handlePay(selectedEmployee?.userId)}
+                      disabled={selectedEmployee?.isPaid}
+                      className={cn(
+                        "w-full h-10 sm:h-11 lg:h-12 text-sm sm:text-base lg:text-lg font-semibold text-white",
+                        selectedEmployee?.isPaid
+                          ? "bg-emerald-800 opacity-50 cursor-not-allowed"
+                          : "bg-gradient-to-r from-emerald-600 to-emerald-700"
+                      )}
                     >
                       <Wallet className="mr-2 h-4 w-4 sm:h-5 sm:w-5" />
-                      Payer
+                      {selectedEmployee?.isPaid ? "Salaire Payé" : "Payer"}
                     </Button>
                   </div>
                 </div>
@@ -1274,7 +1346,167 @@ export default function PayrollPage() {
 
           <div className="mt-6 pt-4 border-t border-[#c9b896]/30 flex justify-between items-center font-black text-[#8b5a2b]">
             <span>TOTAL GLOBAL</span>
-            <span className="text-xl text-cyan-700">{Math.round(globalStats.totalDoublages).toLocaleString()} DT</span>
+            <span className="text-xl text-cyan-700">
+              {Math.round(data?.getDoublages?.reduce((acc: number, curr: any) => acc + (curr.montant || 0), 0) || 0).toLocaleString()} DT
+            </span>
+          </div>
+        </DialogContent>
+      </Dialog>
+      {/* Primes List Dialog */}
+      <Dialog open={viewPrimesOpen} onOpenChange={setViewPrimesOpen}>
+        <DialogContent className="bg-white border-[#c9b896] sm:max-w-[500px] rounded-2xl p-6 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold text-[#8b5a2b] flex items-center gap-2">
+              <Award className="h-5 w-5 text-amber-600" /> Liste des Primes
+            </DialogTitle>
+            <p className="text-sm text-[#6b5744]">Primes pour {format(selectedMonth, 'MMMM yyyy', { locale: fr })}</p>
+          </DialogHeader>
+
+          <div className="mt-4 space-y-3 max-h-[400px] overflow-y-auto pr-2">
+            {useMemo(() => {
+              const extras = data?.getExtras || [];
+              const primesOnly = extras.filter((ex: any) => (ex.motif || "").toLowerCase().startsWith("prime"));
+
+              if (primesOnly.length === 0) return <div className="text-center py-8 text-[#6b5744]">Aucune prime ce mois-ci</div>;
+
+              // Aggregate by user
+              const userMap = new Map();
+              primesOnly.forEach((p: any) => {
+                const uid = String(p.user_id);
+                if (!userMap.has(uid)) {
+                  userMap.set(uid, {
+                    id: uid,
+                    username: p.username || "Inconnu",
+                    total: 0,
+                    items: [],
+                    photo: users.find((u: any) => String(u.id) === uid)?.photo
+                  });
+                }
+                const entry = userMap.get(uid);
+                entry.total += parseFloat(p.montant || 0);
+                entry.items.push(p);
+              });
+
+              return Array.from(userMap.values()).map((entry: any) => (
+                <div key={entry.id} className="flex flex-col gap-2 p-4 rounded-xl border border-[#c9b896]/30 bg-[#f8f6f1]/30 hover:bg-[#f8f6f1] transition-colors">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-full overflow-hidden border border-[#c9b896]/50 bg-white">
+                        {entry.photo ? (
+                          <img src={entry.photo} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="h-full w-full flex items-center justify-center text-[#8b5a2b] font-bold">
+                            {entry.username?.charAt(0)}
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <p className="font-bold text-[#3d2c1e] text-sm">{entry.username}</p>
+                      </div>
+                    </div>
+                    <div className="text-amber-600 font-black text-sm">
+                      {entry.total.toLocaleString()} DT
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 pt-2 border-t border-[#c9b896]/10">
+                    {entry.items.map((item: any, i: number) => (
+                      <div key={i} className="flex justify-between w-full text-[10px] font-bold text-[#3d2c1e]">
+                        <span>{format(new Date(item.date_extra), 'dd MMM', { locale: fr })} - {item.motif}</span>
+                        <span className="text-amber-600">+{item.montant} DT</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ));
+            }, [data?.getExtras, users, selectedMonth])}
+          </div>
+
+          <div className="mt-6 pt-4 border-t border-[#c9b896]/30 flex justify-between items-center font-black text-[#8b5a2b]">
+            <span>TOTAL GLOBAL</span>
+            <span className="text-xl text-amber-600">
+              {Math.round(globalStats.totalPrimes).toLocaleString()} DT
+            </span>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Extras List Dialog */}
+      <Dialog open={viewExtrasOpen} onOpenChange={setViewExtrasOpen}>
+        <DialogContent className="bg-white border-[#c9b896] sm:max-w-[500px] rounded-2xl p-6 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold text-[#8b5a2b] flex items-center gap-2">
+              <Layers className="h-5 w-5 text-emerald-600" /> Liste des Extras
+            </DialogTitle>
+            <p className="text-sm text-[#6b5744]">Extras pour {format(selectedMonth, 'MMMM yyyy', { locale: fr })}</p>
+          </DialogHeader>
+
+          <div className="mt-4 space-y-3 max-h-[400px] overflow-y-auto pr-2">
+            {useMemo(() => {
+              const extras = data?.getExtras || [];
+              const extrasOnly = extras.filter((ex: any) => {
+                const m = (ex.motif || "").toLowerCase();
+                return !m.startsWith("prime") && !m.startsWith("infraction");
+              });
+
+              if (extrasOnly.length === 0) return <div className="text-center py-8 text-[#6b5744]">Aucun extra ce mois-ci</div>;
+
+              // Aggregate by user
+              const userMap = new Map();
+              extrasOnly.forEach((p: any) => {
+                const uid = String(p.user_id);
+                if (!userMap.has(uid)) {
+                  userMap.set(uid, {
+                    id: uid,
+                    username: p.username || "Inconnu",
+                    total: 0,
+                    items: [],
+                    photo: users.find((u: any) => String(u.id) === uid)?.photo
+                  });
+                }
+                const entry = userMap.get(uid);
+                entry.total += parseFloat(p.montant || 0);
+                entry.items.push(p);
+              });
+
+              return Array.from(userMap.values()).map((entry: any) => (
+                <div key={entry.id} className="flex flex-col gap-2 p-4 rounded-xl border border-[#c9b896]/30 bg-[#f8f6f1]/30 hover:bg-[#f8f6f1] transition-colors">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-full overflow-hidden border border-[#c9b896]/50 bg-white">
+                        {entry.photo ? (
+                          <img src={entry.photo} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="h-full w-full flex items-center justify-center text-[#8b5a2b] font-bold">
+                            {entry.username?.charAt(0)}
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <p className="font-bold text-[#3d2c1e] text-sm">{entry.username}</p>
+                      </div>
+                    </div>
+                    <div className="text-emerald-600 font-black text-sm">
+                      {entry.total.toLocaleString()} DT
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 pt-2 border-t border-[#c9b896]/10">
+                    {entry.items.map((item: any, i: number) => (
+                      <div key={i} className="flex justify-between w-full text-[10px] font-bold text-[#3d2c1e]">
+                        <span>{format(new Date(item.date_extra), 'dd MMM', { locale: fr })} - {item.motif || "Extra"}</span>
+                        <span className="text-emerald-600">+{item.montant} DT</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ));
+            }, [data?.getExtras, users, selectedMonth])}
+          </div>
+
+          <div className="mt-6 pt-4 border-t border-[#c9b896]/30 flex justify-between items-center font-black text-[#8b5a2b]">
+            <span>TOTAL GLOBAL</span>
+            <span className="text-xl text-emerald-600">
+              {Math.round(globalStats.totalExtras).toLocaleString()} DT
+            </span>
           </div>
         </DialogContent>
       </Dialog>

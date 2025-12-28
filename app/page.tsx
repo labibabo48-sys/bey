@@ -5,7 +5,7 @@ import { StatCard } from "@/components/stat-card"
 import { RealTimeTracking } from "@/components/real-time-tracking"
 import { NotificationBell } from "@/components/notification-bell"
 import { DashboardSkeleton } from "@/components/dashboard-skeleton"
-import { Users, Clock, DollarSign, AlertCircle, Calendar, CheckCircle } from "lucide-react"
+import { Users, Clock, DollarSign, AlertCircle, Calendar, CheckCircle, Coffee } from "lucide-react"
 import { mockUsers, mockAttendance, mockAdvances, currentUser } from "@/lib/mock-data"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -157,6 +157,7 @@ function DashboardContent() {
     const retardsCount = expectedToday.filter((p: any) => p.state === "Retard").length;
 
     const absentsCount = validPersonnel.filter((p: any) => p.state === "Absent" || p.state === "Missing_Exit").length;
+    const reposCount = validPersonnel.filter((p: any) => p.state === "Repos").length;
 
     const attendanceRate = expectedToday.length > 0 ? Math.round((presentCount / expectedToday.length) * 100) : 0;
 
@@ -191,6 +192,7 @@ function DashboardContent() {
       presentCount,
       retardsCount,
       absentsCount,
+      reposCount,
       totalDelayMins,
       totalEmployees,
       attendanceRate,
@@ -224,6 +226,7 @@ function DashboardContent() {
     presentCount = 0,
     retardsCount = 0,
     absentsCount = 0,
+    reposCount = 0,
     totalDelayMins = 0,
     totalEmployees = 0,
     attendanceRate = 0,
@@ -280,7 +283,7 @@ function DashboardContent() {
           </div>
 
           <div className="p-6 lg:p-10 space-y-10">
-            <div className="grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6 animate-in fade-in slide-in-from-top-10 duration-700">
+            <div className="grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-4 animate-in fade-in slide-in-from-top-10 duration-700 items-stretch">
               {canSee('dashboard', 'total_personnel') && (
                 <StatCard
                   title="Total Personnel"
@@ -288,7 +291,7 @@ function DashboardContent() {
                   icon={Users}
                   color="bronze"
                   change={`${totalEmployees} collaborateurs`}
-                  trend="up"
+                  trend="neutral"
                   href="/employees"
                 />
               )}
@@ -299,7 +302,7 @@ function DashboardContent() {
                   icon={CheckCircle}
                   color="copper"
                   change={`${attendanceRate}% du Bey au travail`}
-                  trend="up"
+                  trend="neutral"
                   href="/attendance"
                 />
               )}
@@ -323,6 +326,17 @@ function DashboardContent() {
                   color="red"
                   change={`- ${absentsCount} aujourd'hui`}
                   trend={absentsCount > 0 ? "down" : "up"}
+                  href="/attendance"
+                />
+              )}
+              {canSee('dashboard', 'en_repos') && (
+                <StatCard
+                  title="En Repos"
+                  value={reposCount}
+                  icon={Coffee}
+                  color="copper"
+                  change={`${reposCount} aujourd'hui`}
+                  trend="neutral"
                   href="/attendance"
                 />
               )}

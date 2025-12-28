@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Clock, CheckCircle, Search, Calendar as CalendarIcon, ChevronLeft, ChevronRight, Users, Filter, XCircle, Award, TrendingUp } from "lucide-react"
+import { Clock, CheckCircle, Search, Calendar as CalendarIcon, ChevronLeft, ChevronRight, Users, Filter, XCircle, Award, TrendingUp, Coffee } from "lucide-react"
 import { useState, useMemo, Suspense, useEffect, useRef } from "react"
 import { useSearchParams } from "next/navigation"
 import { gql, useQuery, useMutation } from "@apollo/client"
@@ -466,7 +466,7 @@ function AttendanceContent() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4 text-slate-700">
                   <div className="rounded-full bg-slate-50 p-3 lg:p-4">
-                    <CheckCircle className="h-6 w-6 lg:h-8 lg:w-8" />
+                    <Coffee className="h-6 w-6 lg:h-8 lg:w-8" />
                   </div>
                   <div>
                     <p className="text-sm lg:text-base font-bold uppercase tracking-wider opacity-70">Repos</p>
