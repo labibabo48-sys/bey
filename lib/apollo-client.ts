@@ -26,11 +26,13 @@ const createApolloClient = () => {
 
     const httpLink = new BatchHttpLink({
         uri: "/api/graphql",
-        batchInterval: 20,
+        batchInterval: 50, // Increased from 20ms to 50ms to batch more requests
+        batchMax: 10, // Maximum of 10 queries per batch
     });
 
     return new ApolloClient({
         link: authLink.concat(httpLink),
+        connectToDevTools: process.env.NODE_ENV === 'development',
         cache: new InMemoryCache({
             typePolicies: {
                 Query: {

@@ -12,6 +12,7 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+
   webpack: (config, { dev, isServer }) => {
     if (dev && !isServer) {
       config.watchOptions = {

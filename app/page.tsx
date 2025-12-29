@@ -111,8 +111,9 @@ function DashboardContent() {
       payrollMonth: payrollMonth
     },
     fetchPolicy: "cache-first",
-    nextFetchPolicy: "cache-and-network",
+    nextFetchPolicy: "cache-first",
     notifyOnNetworkStatusChange: false,
+    pollInterval: 60000, // Auto-refresh every 60 seconds
   });
 
   const stats = useMemo(() => {

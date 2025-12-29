@@ -309,6 +309,12 @@ const getCached = (key: string): any | null => {
 };
 
 const setCache = (key: string, data: any, ttl: number = 30000) => {
+  // Limit cache size to prevent memory leaks
+  if (cache.size > 100) {
+    const firstKey = cache.keys().next().value;
+    cache.delete(firstKey);
+  }
+
   cache.set(key, {
     data,
     timestamp: Date.now(),
