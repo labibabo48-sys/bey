@@ -13,6 +13,9 @@ if (process.env.NODE_ENV !== 'production') {
     (global as any).pgPool = pool;
 }
 
+// Increase max listeners to prevent warning
+pool.setMaxListeners(20);
+
 // Handle errors
 pool.on('error', (err: Error) => {
     console.error('Database pool error:', err);

@@ -58,6 +58,7 @@ const GET_PAYROLL_PAGE = gql`
       retard
       remarque
       doublage
+      paid
     }
     getAllSchedules {
       user_id
@@ -104,6 +105,12 @@ const ADD_DOUBLAGE = gql`
 const INIT_PAYROLL = gql`
   mutation InitPayroll($month: String!) {
     initPayrollMonth(month: $month)
+  }
+`
+
+const PAY_USER = gql`
+  mutation PayUser($month: String!, $userId: ID!) {
+    payUser(month: $month, userId: $userId)
   }
 `
 
@@ -223,10 +230,16 @@ export default function PayrollPage() {
 
       const stats = calculateUserStats(user, userRecords, userSchedule, selectedMonth);
 
+      // Check if user is paid (check if any record has paid = true)
+      const isPaid = userRecords.some((r: any) => r.paid === true);
+
+      console.log(`User ${user.username} (ID: ${user.id}) - isPaid:`, isPaid, 'Records:', userRecords.length, 'Paid records:', userRecords.filter((r: any) => r.paid).length);
+
       return {
         userId: user.id,
         user,
         month: format(selectedMonth, "MMMM yyyy", { locale: fr }),
+        isPaid,
         ...stats
       }
     })
@@ -240,6 +253,7 @@ export default function PayrollPage() {
       totalExtras: payrollSummary.reduce((acc: number, curr: any) => acc + curr.totalExtras, 0),
       totalDoublages: payrollSummary.reduce((acc: number, curr: any) => acc + curr.totalDoublages, 0),
       totalNet: payrollSummary.reduce((acc: number, curr: any) => acc + curr.netSalary, 0),
+      totalPaid: payrollSummary.reduce((acc: number, curr: any) => acc + (curr.isPaid ? curr.netSalary : 0), 0),
     }
   }, [payrollSummary]);
 
@@ -318,8 +332,12 @@ export default function PayrollPage() {
   // Primes View Dialog State
   const [viewPrimesOpen, setViewPrimesOpen] = useState(false)
 
+  // Paid View Dialog State
+  const [viewPaidOpen, setViewPaidOpen] = useState(false)
+
   const [addExtra, { loading: addingExtra }] = useMutation(ADD_EXTRA)
   const [addDoublage, { loading: addingDoublage }] = useMutation(ADD_DOUBLAGE)
+  const [payUser, { loading: payingUser }] = useMutation(PAY_USER)
 
   const handleAddExtra = async () => {
     if (!extraUserId || !extraAmount || !extraDate) return
@@ -383,6 +401,23 @@ export default function PayrollPage() {
       setPrimeDate(new Date())
     } catch (error) {
       console.error("Error adding prime:", error)
+    }
+  }
+
+  const handlePayUser = async (userId: string) => {
+    try {
+      console.log('Paying user:', userId, 'for month:', payrollMonthKey)
+      const result = await payUser({
+        variables: {
+          month: payrollMonthKey,
+          userId: userId
+        }
+      })
+      console.log('Payment result:', result)
+      await refetch()
+      console.log('Data refetched after payment')
+    } catch (error) {
+      console.error("Error paying user:", error)
     }
   }
 
@@ -805,6 +840,13 @@ export default function PayrollPage() {
                 <p className="text-2xl font-bold text-[#c9a227]">{Math.round(globalStats.totalNet)} DT</p>
               </Card>
             )}
+            <Card
+              className="border-green-500 bg-green-50 p-4 shadow-md cursor-pointer hover:bg-green-100 transition-colors"
+              onClick={() => setViewPaidOpen(true)}
+            >
+              <p className="text-sm text-green-700 font-semibold">Total Payé</p>
+              <p className="text-2xl font-bold text-green-600">{Math.round(globalStats.totalPaid)} DT</p>
+            </Card>
             {canSee('payroll', 'stats_primes') && (
               <Card
                 className="border-[#c9b896] bg-white p-4 shadow-md cursor-pointer hover:bg-[#f8f6f1] transition-colors"
@@ -878,7 +920,8 @@ export default function PayrollPage() {
                 </thead>
                 <tbody>
                   {filteredPayrollSummary.map((p: any) => (
-                    <tr key={p.userId} id={`payroll-desktop-${p.userId}`} className="border-b border-[#c9b896]/30 hover:bg-[#f8f6f1]/50">
+                    <tr key={p.userId} id={`payroll-desktop-${p.userId}`} className={cn("border-b border-[#c9b896]/30 hover:bg-[#f8f6f1]/50", p.isPaid && "!bg-green-300 !border-green-500")}>
+
                       {canSee('payroll', 'col_employee') && (
                         <td className="p-4">
                           <button
@@ -910,8 +953,13 @@ export default function PayrollPage() {
                       {canSee('payroll', 'col_net') && <td className="p-4 font-bold text-lg text-[#3d2c1e]">{Math.round(p.netSalary)} DT</td>}
                       {canSee('payroll', 'col_action') && (
                         <td className="p-4">
-                          <Button size="sm" className="bg-emerald-600 text-white hover:bg-emerald-700">
-                            <CheckCircle2 className="mr-2 h-4 w-4" /> Payer
+                          <Button
+                            size="sm"
+                            className="bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            onClick={() => handlePayUser(p.userId)}
+                            disabled={p.isPaid || payingUser}
+                          >
+                            <CheckCircle2 className="mr-2 h-4 w-4" /> {p.isPaid ? "Payé" : "Payer"}
                           </Button>
                         </td>
                       )}
@@ -924,7 +972,8 @@ export default function PayrollPage() {
             {/* Mobile List View */}
             <div className="md:hidden space-y-4">
               {filteredPayrollSummary.map((p: any) => (
-                <div key={p.userId} id={`payroll-mobile-${p.userId}`} className="bg-white border border-[#c9b896] rounded-xl p-4 shadow-sm flex flex-col gap-3">
+                <div key={p.userId} id={`payroll-mobile-${p.userId}`} className={cn("bg-white border border-[#c9b896] rounded-xl p-4 shadow-sm flex flex-col gap-3", p.isPaid && "!bg-green-300 !border-green-500")}>
+
                   <div className="flex items-center justify-between">
                     <button
                       onClick={() => canSee('payroll', 'user_details_modal') && openEmployeePlanning(p)}
@@ -989,11 +1038,23 @@ export default function PayrollPage() {
                     )}
                   </div>
 
-                  {canSee('payroll', 'user_details_modal') && (
-                    <Button onClick={() => openEmployeePlanning(p)} variant="outline" size="sm" className="w-full text-[#8b5a2b] border-[#8b5a2b]">
-                      Voir détails & Planning
-                    </Button>
-                  )}
+                  <div className="flex gap-2">
+                    {canSee('payroll', 'user_details_modal') && (
+                      <Button onClick={() => openEmployeePlanning(p)} variant="outline" size="sm" className="flex-1 text-[#8b5a2b] border-[#8b5a2b]">
+                        Voir détails & Planning
+                      </Button>
+                    )}
+                    {canSee('payroll', 'col_action') && (
+                      <Button
+                        size="sm"
+                        className="flex-1 bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        onClick={() => handlePayUser(p.userId)}
+                        disabled={p.isPaid || payingUser}
+                      >
+                        <CheckCircle2 className="mr-2 h-4 w-4" /> {p.isPaid ? "Payé" : "Payer"}
+                      </Button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -1440,6 +1501,59 @@ export default function PayrollPage() {
           <div className="mt-6 pt-4 border-t border-[#c9b896]/30 flex justify-between items-center font-black text-[#8b5a2b]">
             <span>TOTAL GLOBAL</span>
             <span className="text-xl text-amber-700">{Math.round(globalStats.totalPrimes).toLocaleString()} DT</span>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Paid Users List Dialog */}
+      <Dialog open={viewPaidOpen} onOpenChange={setViewPaidOpen}>
+        <DialogContent className="bg-white border-[#c9b896] sm:max-w-[500px] rounded-2xl p-6 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold text-[#8b5a2b] flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5 text-green-600" /> Liste des Salaires Payés
+            </DialogTitle>
+            <p className="text-sm text-[#6b5744]">Paiements effectués pour {format(selectedMonth, 'MMMM yyyy', { locale: fr })}</p>
+          </DialogHeader>
+
+          <div className="mt-4 space-y-3 max-h-[400px] overflow-y-auto pr-2">
+            {useMemo(() => {
+              const paidUsers = payrollSummary.filter((p: any) => p.isPaid);
+
+              if (paidUsers.length === 0) return <div className="text-center py-8 text-[#6b5744]">Aucun paiement ce mois-ci</div>;
+
+              return paidUsers.map((p: any) => (
+                <div key={p.userId} className="flex flex-col gap-2 p-4 rounded-xl border border-green-500/30 bg-green-50/30 hover:bg-green-50 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-full overflow-hidden border border-green-500/50 bg-white">
+                        {p.user?.photo ? (
+                          <img src={p.user.photo} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="h-full w-full flex items-center justify-center text-[#8b5a2b] font-bold">
+                            {p.user?.username?.charAt(0)}
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <p className="font-bold text-[#3d2c1e] text-sm">{p.user?.username}</p>
+                      </div>
+                    </div>
+                    <div className="text-green-600 font-black text-sm">
+                      {Math.round(p.netSalary).toLocaleString()} DT
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 pt-2 border-t border-green-500/10">
+                    <CheckCircle2 className="h-3 w-3 text-green-600" />
+                    <span className="text-[10px] font-bold text-green-700">PAYÉ</span>
+                  </div>
+                </div>
+              ));
+            }, [payrollSummary, selectedMonth])}
+          </div>
+
+          <div className="mt-6 pt-4 border-t border-[#c9b896]/30 flex justify-between items-center font-black text-[#8b5a2b]">
+            <span>TOTAL PAYÉ</span>
+            <span className="text-xl text-green-700">{Math.round(globalStats.totalPaid).toLocaleString()} DT</span>
           </div>
         </DialogContent>
       </Dialog>

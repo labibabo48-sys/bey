@@ -32,7 +32,6 @@ const createApolloClient = () => {
 
     return new ApolloClient({
         link: authLink.concat(httpLink),
-        connectToDevTools: process.env.NODE_ENV === 'development',
         cache: new InMemoryCache({
             typePolicies: {
                 Query: {

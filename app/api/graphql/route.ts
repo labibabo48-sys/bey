@@ -168,6 +168,7 @@ const typeDefs = `#graphql
     clock_in: String
     clock_out: String
     updated: Boolean
+    paid: Boolean
   }
 
   type PerformanceStats {
@@ -261,6 +262,7 @@ const typeDefs = `#graphql
     deleteOldNotifications: Boolean
     pardonLate(userId: ID!, date: String!): PayrollRecord
     changePassword(userId: ID!, oldPassword: String!, newPassword: String!): Boolean
+    payUser(month: String!, userId: ID!): Boolean
   }
 `;
 
@@ -629,6 +631,7 @@ async function initializePayrollTable(month: string) {
           clock_in VARCHAR(50),
           clock_out VARCHAR(50),
           updated BOOLEAN DEFAULT FALSE,
+          paid boolean NOT NULL DEFAULT false,
           UNIQUE(user_id, date)
         )
       `);
@@ -2880,6 +2883,36 @@ const resolvers = {
 
       const final = await pool.query(`SELECT * FROM public."${tableName}" WHERE id = $1`, [record.id]);
       return { ...final.rows[0], date: formatDateLocal(final.rows[0].date) };
+    },
+    payUser: async (_: any, { month, userId }: { month: string, userId: string }, context: any) => {
+      const tableName = `paiecurrent_${month}`;
+
+      try {
+        // Update all records for this user in this month to paid = true
+        await pool.query(
+          `UPDATE public."${tableName}" SET paid = true WHERE user_id = $1`,
+          [userId]
+        );
+
+        // Get username for notification
+        const userRes = await pool.query('SELECT username FROM public.users WHERE id = $1', [userId]);
+        const username = userRes.rows[0]?.username || 'Employé';
+
+        // Create notification
+        await createNotification(
+          'payment',
+          "Paiement Effectué",
+          `Le salaire de ${username} pour ${month.replace('_', '/')} a été payé.`,
+          userId,
+          context.userDone
+        );
+
+        invalidateCache();
+        return true;
+      } catch (error) {
+        console.error('Error paying user:', error);
+        throw new Error('Failed to mark user as paid');
+      }
     }
   },
   User: {
