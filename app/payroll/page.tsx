@@ -249,17 +249,7 @@ export default function PayrollPage() {
     })
   }, [users, payrollRecords, schedules, selectedMonth]);
 
-  const globalStats = useMemo(() => {
-    return {
-      totalPay: payrollSummary.reduce((acc: number, curr: any) => acc + curr.baseSalary, 0),
-      totalAdvances: payrollSummary.reduce((acc: number, curr: any) => acc + curr.totalAdvances, 0),
-      totalPrimes: payrollSummary.reduce((acc: number, curr: any) => acc + curr.totalPrimes, 0),
-      totalExtras: payrollSummary.reduce((acc: number, curr: any) => acc + curr.totalExtras, 0),
-      totalDoublages: payrollSummary.reduce((acc: number, curr: any) => acc + curr.totalDoublages, 0),
-      totalNet: payrollSummary.reduce((acc: number, curr: any) => acc + curr.netSalary, 0),
-      totalPaid: payrollSummary.reduce((acc: number, curr: any) => acc + (curr.isPaid ? curr.netSalary : 0), 0),
-    }
-  }, [payrollSummary]);
+
 
 
   // Planning Dialog State
@@ -283,6 +273,10 @@ export default function PayrollPage() {
   const [selectedDepartment, setSelectedDepartment] = useState("all")
   const [unpayConfirmOpen, setUnpayConfirmOpen] = useState(false)
   const [unpayTargetId, setUnpayTargetId] = useState<string | null>(null)
+  const [viewDoublagesSelectedDepartment, setViewDoublagesSelectedDepartment] = useState("all")
+  const [viewExtrasSelectedDepartment, setViewExtrasSelectedDepartment] = useState("all")
+  const [viewPrimesSelectedDepartment, setViewPrimesSelectedDepartment] = useState("all")
+  const [viewPaidSelectedDepartment, setViewPaidSelectedDepartment] = useState("all")
 
   // Auto-scroll Logic
   const searchParams = useSearchParams();
@@ -516,6 +510,18 @@ export default function PayrollPage() {
       return matchesSearch && matchesDep
     })
   }, [payrollSummary, searchTerm, selectedDepartment])
+
+  const globalStats = useMemo(() => {
+    return {
+      totalPay: filteredPayrollSummary.reduce((acc: number, curr: any) => acc + curr.baseSalary, 0),
+      totalAdvances: filteredPayrollSummary.reduce((acc: number, curr: any) => acc + curr.totalAdvances, 0),
+      totalPrimes: filteredPayrollSummary.reduce((acc: number, curr: any) => acc + curr.totalPrimes, 0),
+      totalExtras: filteredPayrollSummary.reduce((acc: number, curr: any) => acc + curr.totalExtras, 0),
+      totalDoublages: filteredPayrollSummary.reduce((acc: number, curr: any) => acc + curr.totalDoublages, 0),
+      totalNet: filteredPayrollSummary.reduce((acc: number, curr: any) => acc + curr.netSalary, 0),
+      totalPaid: filteredPayrollSummary.reduce((acc: number, curr: any) => acc + (curr.isPaid ? curr.netSalary : 0), 0),
+    }
+  }, [filteredPayrollSummary]);
 
   // Get unique departments
   const departments = useMemo(() => {
@@ -871,19 +877,19 @@ export default function PayrollPage() {
           <div className="mb-6 sm:mb-8 grid gap-4 sm:gap-6 grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
             {canSee('payroll', 'stats_total_base') && (
               <Card className="border-[#c9b896] bg-white p-4 shadow-md">
-                <p className="text-sm text-[#6b5744]">Total Salaires Base</p>
+                <p className="text-sm text-[#6b5744]">Total Salaires Base {selectedDepartment !== "all" ? `(${selectedDepartment})` : (searchTerm ? "(Filtré)" : "")}</p>
                 <p className="text-2xl font-bold text-[#3d2c1e]">{Math.round(globalStats.totalPay)} DT</p>
               </Card>
             )}
             {canSee('payroll', 'stats_avances') && (
               <Card className="border-[#c9b896] bg-white p-4 shadow-md">
-                <p className="text-sm text-[#6b5744]">Avances</p>
+                <p className="text-sm text-[#6b5744]">Avances {selectedDepartment !== "all" ? `(${selectedDepartment})` : (searchTerm ? "(Filtré)" : "")}</p>
                 <p className="text-2xl font-bold text-[#a0522d]">{Math.round(globalStats.totalAdvances)} DT</p>
               </Card>
             )}
             {canSee('payroll', 'stats_net_global') && (
               <Card className="border-[#c9b896] bg-white p-4 shadow-md">
-                <p className="text-sm text-[#6b5744]">Net à Payer Global</p>
+                <p className="text-sm text-[#6b5744]">Net Global {selectedDepartment !== "all" ? `(${selectedDepartment})` : (searchTerm ? "(Filtré)" : "")}</p>
                 <p className="text-2xl font-bold text-[#c9a227]">{Math.round(globalStats.totalNet)} DT</p>
               </Card>
             )}
@@ -891,7 +897,7 @@ export default function PayrollPage() {
               className="border-green-500 bg-green-50 p-4 shadow-md cursor-pointer hover:bg-green-100 transition-colors"
               onClick={() => setViewPaidOpen(true)}
             >
-              <p className="text-sm text-green-700 font-semibold">Total Payé</p>
+              <p className="text-sm text-green-700 font-semibold">Total Payé {selectedDepartment !== "all" ? `(${selectedDepartment})` : (searchTerm ? "(Filtré)" : "")}</p>
               <p className="text-2xl font-bold text-green-600">{Math.round(globalStats.totalPaid)} DT</p>
             </Card>
             {canSee('payroll', 'stats_primes') && (
@@ -1395,69 +1401,101 @@ export default function PayrollPage() {
             <DialogTitle className="text-xl font-bold text-[#8b5a2b] flex items-center gap-2">
               <Layers className="h-5 w-5 text-cyan-600" /> Liste des Doublages
             </DialogTitle>
-            <p className="text-sm text-[#6b5744]">Doublages pour {format(selectedMonth, 'MMMM yyyy', { locale: fr })}</p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <p className="text-sm text-[#6b5744]">Doublages pour {format(selectedMonth, 'MMMM yyyy', { locale: fr })}</p>
+              <Select value={viewDoublagesSelectedDepartment} onValueChange={setViewDoublagesSelectedDepartment}>
+                <SelectTrigger className="h-8 w-[140px] text-xs bg-[#f8f6f1] border-[#c9b896]">
+                  <SelectValue placeholder="Département" />
+                </SelectTrigger>
+                <SelectContent className="bg-white border-[#c9b896]">
+                  <SelectItem value="all">Tous les dép.</SelectItem>
+                  {departments.map((dep: any) => (
+                    <SelectItem key={dep} value={dep}>{dep}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </DialogHeader>
 
-          <div className="mt-4 space-y-3 max-h-[400px] overflow-y-auto pr-2">
-            {useMemo(() => {
-              const doublageList = data?.getDoublages || [];
-              if (doublageList.length === 0) return <div className="text-center py-8 text-[#6b5744]">Aucun doublage ce mois-ci</div>;
+          {(() => {
+            const doublageList = data?.getDoublages || [];
 
-              // Aggregate by user
-              const userMap = new Map();
-              doublageList.forEach((d: any) => {
-                if (!userMap.has(d.user_id)) {
-                  userMap.set(d.user_id, {
-                    id: d.user_id,
-                    username: d.username,
-                    total: 0,
-                    dates: [],
-                    photo: users.find((u: any) => u.id === d.user_id)?.photo
-                  });
-                }
-                const userEntry = userMap.get(d.user_id);
-                userEntry.total += d.montant;
-                userEntry.dates.push(d.date);
-              });
+            // Aggregate and Filter
+            const userMap = new Map();
+            let localTotal = 0;
 
-              return Array.from(userMap.values()).map((entry: any) => (
-                <div key={entry.id} className="flex flex-col gap-2 p-4 rounded-xl border border-[#c9b896]/30 bg-[#f8f6f1]/30 hover:bg-[#f8f6f1] transition-colors">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-full overflow-hidden border border-[#c9b896]/50 bg-white">
-                        {entry.photo ? (
-                          <img src={entry.photo} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="h-full w-full flex items-center justify-center text-[#8b5a2b] font-bold">
-                            {entry.username?.charAt(0)}
+            doublageList.forEach((d: any) => {
+              const user = users.find((u: any) => u.id === d.user_id);
+              const userDep = user?.departement || "Autre";
+
+              if (viewDoublagesSelectedDepartment !== "all" && userDep !== viewDoublagesSelectedDepartment) {
+                return;
+              }
+
+              if (!userMap.has(d.user_id)) {
+                userMap.set(d.user_id, {
+                  id: d.user_id,
+                  username: d.username,
+                  total: 0,
+                  dates: [],
+                  photo: user?.photo
+                });
+              }
+              const userEntry = userMap.get(d.user_id);
+              userEntry.total += d.montant;
+              userEntry.dates.push(d.date);
+              localTotal += d.montant;
+            });
+
+            const filteredUsers = Array.from(userMap.values());
+
+            return (
+              <>
+                <div className="mt-4 space-y-3 max-h-[400px] overflow-y-auto pr-2">
+                  {filteredUsers.length === 0 ? (
+                    <div className="text-center py-8 text-[#6b5744]">Aucun doublage trouvé</div>
+                  ) : (
+                    filteredUsers.map((entry: any) => (
+                      <div key={entry.id} className="flex flex-col gap-2 p-4 rounded-xl border border-[#c9b896]/30 bg-[#f8f6f1]/30 hover:bg-[#f8f6f1] transition-colors">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-full overflow-hidden border border-[#c9b896]/50 bg-white">
+                              {entry.photo ? (
+                                <img src={entry.photo} alt="" className="w-full h-full object-cover" />
+                              ) : (
+                                <div className="h-full w-full flex items-center justify-center text-[#8b5a2b] font-bold">
+                                  {entry.username?.charAt(0)}
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <p className="font-bold text-[#3d2c1e] text-sm">{entry.username}</p>
+                            </div>
                           </div>
-                        )}
+                          <div className="text-cyan-600 font-black text-sm">
+                            {entry.total.toLocaleString()} DT
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 pt-2 border-t border-[#c9b896]/10">
+                          <span className="text-[9px] font-black uppercase text-[#6b5744]/50 w-full mb-1">Dates travaillées:</span>
+                          {entry.dates.map((d: string, i: number) => (
+                            <span key={i} className="px-2 py-0.5 rounded-full bg-white border border-[#c9b896]/30 text-[10px] font-bold text-[#3d2c1e] shadow-sm">
+                              {format(new Date(d), 'dd MMM yyyy', { locale: fr })}
+                            </span>
+                          ))}
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-bold text-[#3d2c1e] text-sm">{entry.username}</p>
-                      </div>
-                    </div>
-                    <div className="text-cyan-600 font-black text-sm">
-                      {entry.total.toLocaleString()} DT
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5 pt-2 border-t border-[#c9b896]/10">
-                    <span className="text-[9px] font-black uppercase text-[#6b5744]/50 w-full mb-1">Dates travaillées:</span>
-                    {entry.dates.map((d: string, i: number) => (
-                      <span key={i} className="px-2 py-0.5 rounded-full bg-white border border-[#c9b896]/30 text-[10px] font-bold text-[#3d2c1e] shadow-sm">
-                        {format(new Date(d), 'dd MMM yyyy', { locale: fr })}
-                      </span>
-                    ))}
-                  </div>
+                    ))
+                  )}
                 </div>
-              ));
-            }, [data?.getDoublages, users, selectedMonth])}
-          </div>
 
-          <div className="mt-6 pt-4 border-t border-[#c9b896]/30 flex justify-between items-center font-black text-[#8b5a2b]">
-            <span>TOTAL GLOBAL</span>
-            <span className="text-xl text-cyan-700">{Math.round(globalStats.totalDoublages).toLocaleString()} DT</span>
-          </div>
+                <div className="mt-6 pt-4 border-t border-[#c9b896]/30 flex justify-between items-center font-black text-[#8b5a2b]">
+                  <span>TOTAL {viewDoublagesSelectedDepartment === "all" ? "GLOBAL" : viewDoublagesSelectedDepartment.toUpperCase()}</span>
+                  <span className="text-xl text-cyan-700">{Math.round(localTotal).toLocaleString()} DT</span>
+                </div>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 
@@ -1468,38 +1506,62 @@ export default function PayrollPage() {
             <DialogTitle className="text-xl font-bold text-[#8b5a2b] flex items-center gap-2">
               <Award className="h-5 w-5 text-emerald-600" /> Liste des Extras
             </DialogTitle>
-            <p className="text-sm text-[#6b5744]">Extras pour {format(selectedMonth, 'MMMM yyyy', { locale: fr })}</p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <p className="text-sm text-[#6b5744]">Extras pour {format(selectedMonth, 'MMMM yyyy', { locale: fr })}</p>
+              <Select value={viewExtrasSelectedDepartment} onValueChange={setViewExtrasSelectedDepartment}>
+                <SelectTrigger className="h-8 w-[140px] text-xs bg-[#f8f6f1] border-[#c9b896]">
+                  <SelectValue placeholder="Département" />
+                </SelectTrigger>
+                <SelectContent className="bg-white border-[#c9b896]">
+                  <SelectItem value="all">Tous les dép.</SelectItem>
+                  {departments.map((dep: any) => (
+                    <SelectItem key={dep} value={dep}>{dep}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </DialogHeader>
 
-          <div className="mt-4 space-y-3 max-h-[400px] overflow-y-auto pr-2">
-            {useMemo(() => {
-              const rawExtras = data?.getExtras || [];
-              const extrasList = rawExtras.filter((e: any) => (e.motif || "Extra").toLowerCase() === "extra");
+          {(() => {
+            const rawExtras = data?.getExtras || [];
+            const extrasListFiltered = rawExtras.filter((e: any) => (e.motif || "Extra").toLowerCase() === "extra");
 
-              if (extrasList.length === 0) return <div className="text-center py-8 text-[#6b5744]">Aucun extra ce mois-ci</div>;
+            // Aggregate and Filter
+            const userMap = new Map();
+            let localTotal = 0;
 
-              // Aggregate by user
-              const userMap = new Map();
-              extrasList.forEach((e: any) => {
-                if (!userMap.has(e.user_id)) {
-                  const user = users.find((u: any) => u.id === e.user_id);
-                  userMap.set(e.user_id, {
-                    id: e.user_id,
-                    username: user?.username || 'Inconnu',
-                    total: 0,
-                    dates: [],
-                    photo: user?.photo
-                  });
-                }
-                const userEntry = userMap.get(e.user_id);
-                userEntry.total += e.montant;
-                userEntry.dates.push(e.date_extra);
-              });
+            extrasListFiltered.forEach((e: any) => {
+              const user = users.find((u: any) => u.id === e.user_id);
+              const userDep = user?.departement || "Autre";
 
-              return (
-                <>
-                  <div className="space-y-3">
-                    {Array.from(userMap.values()).map((entry: any) => (
+              if (viewExtrasSelectedDepartment !== "all" && userDep !== viewExtrasSelectedDepartment) {
+                return;
+              }
+
+              if (!userMap.has(e.user_id)) {
+                userMap.set(e.user_id, {
+                  id: e.user_id,
+                  username: user?.username || 'Inconnu',
+                  total: 0,
+                  dates: [],
+                  photo: user?.photo
+                });
+              }
+              const userEntry = userMap.get(e.user_id);
+              userEntry.total += e.montant;
+              userEntry.dates.push(e.date_extra);
+              localTotal += e.montant;
+            });
+
+            const filteredUsers = Array.from(userMap.values());
+
+            return (
+              <>
+                <div className="mt-4 space-y-3 max-h-[400px] overflow-y-auto pr-2">
+                  {filteredUsers.length === 0 ? (
+                    <div className="text-center py-8 text-[#6b5744]">Aucun extra trouvé</div>
+                  ) : (
+                    filteredUsers.map((entry: any) => (
                       <div key={entry.id} className="flex flex-col gap-2 p-4 rounded-xl border border-[#c9b896]/30 bg-[#f8f6f1]/30 hover:bg-[#f8f6f1] transition-colors">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
@@ -1529,23 +1591,17 @@ export default function PayrollPage() {
                           ))}
                         </div>
                       </div>
-                    ))}
-                  </div>
-                  <div className="pt-4 border-t-2 border-[#8b5a2b]/20 flex justify-between items-center text-lg">
-                    <span className="font-bold text-[#8b5a2b] uppercase tracking-wider">Total Global</span>
-                    <span className="font-black text-emerald-600">
-                      {extrasList.reduce((acc: number, curr: any) => acc + curr.montant, 0).toLocaleString()} DT
-                    </span>
-                  </div>
-                </>
-              );
-            }, [data?.getExtras, users, selectedMonth])}
-          </div>
+                    ))
+                  )}
+                </div>
 
-          <div className="mt-6 pt-4 border-t border-[#c9b896]/30 flex justify-between items-center font-black text-[#8b5a2b]">
-            <span>TOTAL GLOBAL</span>
-            <span className="text-xl text-emerald-700">{Math.round(globalStats.totalExtras).toLocaleString()} DT</span>
-          </div>
+                <div className="mt-6 pt-4 border-t border-[#c9b896]/30 flex justify-between items-center font-black text-[#8b5a2b]">
+                  <span>TOTAL {viewExtrasSelectedDepartment === "all" ? "GLOBAL" : viewExtrasSelectedDepartment.toUpperCase()}</span>
+                  <span className="text-xl text-emerald-700">{Math.round(localTotal).toLocaleString()} DT</span>
+                </div>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 
@@ -1556,51 +1612,61 @@ export default function PayrollPage() {
             <DialogTitle className="text-xl font-bold text-[#8b5a2b] flex items-center gap-2">
               <Award className="h-5 w-5 text-amber-600" /> Liste des Primes
             </DialogTitle>
-            <p className="text-sm text-[#6b5744]">Primes pour {format(selectedMonth, 'MMMM yyyy', { locale: fr })}</p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <p className="text-sm text-[#6b5744]">Primes pour {format(selectedMonth, 'MMMM yyyy', { locale: fr })}</p>
+              <Select value={viewPrimesSelectedDepartment} onValueChange={setViewPrimesSelectedDepartment}>
+                <SelectTrigger className="h-8 w-[140px] text-xs bg-[#f8f6f1] border-[#c9b896]">
+                  <SelectValue placeholder="Département" />
+                </SelectTrigger>
+                <SelectContent className="bg-white border-[#c9b896]">
+                  <SelectItem value="all">Tous les dép.</SelectItem>
+                  {departments.map((dep: any) => (
+                    <SelectItem key={dep} value={dep}>{dep}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </DialogHeader>
 
-          <div className="mt-4 space-y-3 max-h-[400px] overflow-y-auto pr-2">
-            {useMemo(() => {
-              // Get primes from extras table (motif='prime') or payroll.prime field
-              const primesList: any[] = [];
+          {(() => {
+            const primesList: any[] = [];
+            let localTotal = 0;
 
-              // First, get primes from payroll records (prime column)
-              payrollRecords.forEach((record: any) => {
-                if (record.prime > 0) {
-                  const existingUser = primesList.find((p: any) => p.user_id === record.user_id);
-                  const user = users.find((u: any) => u.id === record.user_id);
+            payrollRecords.forEach((record: any) => {
+              if (record.prime > 0) {
+                const user = users.find((u: any) => u.id === record.user_id);
+                const userDep = user?.departement || "Autre";
 
-                  if (existingUser) {
-                    existingUser.total += record.prime;
-                    if (!existingUser.dates.includes(record.date)) {
-                      existingUser.dates.push(record.date);
-                    }
-                  } else if (user) {
-                    primesList.push({
-                      user_id: record.user_id,
-                      username: user.username,
-                      total: record.prime,
-                      dates: [record.date],
-                      photo: user.photo
-                    });
-                  }
+                if (viewPrimesSelectedDepartment !== "all" && userDep !== viewPrimesSelectedDepartment) {
+                  return;
                 }
-              });
 
-              // Add primes specifically marked in extras table if missing
-              const rawExtras = data?.getExtras || [];
-              rawExtras.filter((e: any) => (e.motif || "").toLowerCase().startsWith("prime")).forEach((e: any) => {
-                // If this motif is prime, but maybe it wasn't captured in daily aggregate (e.g. if payroll hasn't refreshed)
-                // Actually, the daily aggregate is the source of truth for the payroll, 
-                // but the modal should probably show the details.
-              });
+                const existingUser = primesList.find((p: any) => p.user_id === record.user_id);
+                if (existingUser) {
+                  existingUser.total += record.prime;
+                  if (!existingUser.dates.includes(record.date)) {
+                    existingUser.dates.push(record.date);
+                  }
+                } else if (user) {
+                  primesList.push({
+                    user_id: record.user_id,
+                    username: user.username,
+                    total: record.prime,
+                    dates: [record.date],
+                    photo: user.photo
+                  });
+                }
+                localTotal += record.prime;
+              }
+            });
 
-              if (primesList.length === 0) return <div className="text-center py-8 text-[#6b5744]">Aucune prime ce mois-ci</div>;
-
-              return (
-                <>
-                  <div className="space-y-3">
-                    {primesList.map((entry: any) => (
+            return (
+              <>
+                <div className="mt-4 space-y-3 max-h-[400px] overflow-y-auto pr-2">
+                  {primesList.length === 0 ? (
+                    <div className="text-center py-8 text-[#6b5744]">Aucune prime trouvée</div>
+                  ) : (
+                    primesList.map((entry: any) => (
                       <div key={entry.user_id} className="flex flex-col gap-2 p-4 rounded-xl border border-[#c9b896]/30 bg-[#f8f6f1]/30 hover:bg-[#f8f6f1] transition-colors">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
@@ -1630,23 +1696,17 @@ export default function PayrollPage() {
                           ))}
                         </div>
                       </div>
-                    ))}
-                  </div>
-                  <div className="pt-4 border-t-2 border-[#8b5a2b]/20 flex justify-between items-center text-lg">
-                    <span className="font-bold text-[#8b5a2b] uppercase tracking-wider">Total Global</span>
-                    <span className="font-black text-amber-600">
-                      {primesList.reduce((acc: number, curr: any) => acc + curr.total, 0).toLocaleString()} DT
-                    </span>
-                  </div>
-                </>
-              );
-            }, [payrollRecords, users, selectedMonth, data?.getExtras])}
-          </div>
+                    ))
+                  )}
+                </div>
 
-          <div className="mt-6 pt-4 border-t border-[#c9b896]/30 flex justify-between items-center font-black text-[#8b5a2b]">
-            <span>TOTAL GLOBAL</span>
-            <span className="text-xl text-amber-700">{Math.round(globalStats.totalPrimes).toLocaleString()} DT</span>
-          </div>
+                <div className="mt-6 pt-4 border-t border-[#c9b896]/30 flex justify-between items-center font-black text-[#8b5a2b]">
+                  <span>TOTAL {viewPrimesSelectedDepartment === "all" ? "GLOBAL" : viewPrimesSelectedDepartment.toUpperCase()}</span>
+                  <span className="text-xl text-amber-700">{Math.round(localTotal).toLocaleString()} DT</span>
+                </div>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 
@@ -1657,49 +1717,74 @@ export default function PayrollPage() {
             <DialogTitle className="text-xl font-bold text-[#8b5a2b] flex items-center gap-2">
               <CheckCircle2 className="h-5 w-5 text-green-600" /> Liste des Salaires Payés
             </DialogTitle>
-            <p className="text-sm text-[#6b5744]">Paiements effectués pour {format(selectedMonth, 'MMMM yyyy', { locale: fr })}</p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <p className="text-sm text-[#6b5744]">Paiements effectués pour {format(selectedMonth, 'MMMM yyyy', { locale: fr })}</p>
+              <Select value={viewPaidSelectedDepartment} onValueChange={setViewPaidSelectedDepartment}>
+                <SelectTrigger className="h-8 w-[140px] text-xs bg-[#f8f6f1] border-[#c9b896]">
+                  <SelectValue placeholder="Département" />
+                </SelectTrigger>
+                <SelectContent className="bg-white border-[#c9b896]">
+                  <SelectItem value="all">Tous les dép.</SelectItem>
+                  {departments.map((dep: any) => (
+                    <SelectItem key={dep} value={dep}>{dep}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </DialogHeader>
 
-          <div className="mt-4 space-y-3 max-h-[400px] overflow-y-auto pr-2">
-            {useMemo(() => {
-              const paidUsers = payrollSummary.filter((p: any) => p.isPaid);
+          {(() => {
+            const filteredPaidUsers = payrollSummary.filter((p: any) => {
+              const isPaid = p.isPaid;
+              const matchesDep = viewPaidSelectedDepartment === "all" || p.user?.departement === viewPaidSelectedDepartment;
+              return isPaid && matchesDep;
+            });
 
-              if (paidUsers.length === 0) return <div className="text-center py-8 text-[#6b5744]">Aucun paiement ce mois-ci</div>;
+            const currentTotal = filteredPaidUsers.reduce((acc, curr) => acc + curr.netSalary, 0);
 
-              return paidUsers.map((p: any) => (
-                <div key={p.userId} className="flex flex-col gap-2 p-4 rounded-xl border border-green-500/30 bg-green-50/30 hover:bg-green-50 transition-colors">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-full overflow-hidden border border-green-500/50 bg-white">
-                        {p.user?.photo ? (
-                          <img src={p.user.photo} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="h-full w-full flex items-center justify-center text-[#8b5a2b] font-bold">
-                            {p.user?.username?.charAt(0)}
+            return (
+              <>
+                <div className="mt-4 space-y-3 max-h-[400px] overflow-y-auto pr-2">
+                  {filteredPaidUsers.length === 0 ? (
+                    <div className="text-center py-8 text-[#6b5744]">Aucun paiement trouvé</div>
+                  ) : (
+                    filteredPaidUsers.map((p: any) => (
+                      <div key={p.userId} className="flex flex-col gap-2 p-4 rounded-xl border border-green-500/30 bg-green-50/30 hover:bg-green-50 transition-colors">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-full overflow-hidden border border-green-500/50 bg-white">
+                              {p.user?.photo ? (
+                                <img src={p.user.photo} alt="" className="w-full h-full object-cover" />
+                              ) : (
+                                <div className="h-full w-full flex items-center justify-center text-[#8b5a2b] font-bold">
+                                  {p.user?.username?.charAt(0)}
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <p className="font-bold text-[#3d2c1e] text-sm">{p.user?.username}</p>
+                            </div>
                           </div>
-                        )}
+                          <div className="text-green-600 font-black text-sm">
+                            {Math.round(p.netSalary).toLocaleString()} DT
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 pt-2 border-t border-green-500/10">
+                          <CheckCircle2 className="h-3 w-3 text-green-600" />
+                          <span className="text-[10px] font-bold text-green-700">PAYÉ</span>
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-bold text-[#3d2c1e] text-sm">{p.user?.username}</p>
-                      </div>
-                    </div>
-                    <div className="text-green-600 font-black text-sm">
-                      {Math.round(p.netSalary).toLocaleString()} DT
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 pt-2 border-t border-green-500/10">
-                    <CheckCircle2 className="h-3 w-3 text-green-600" />
-                    <span className="text-[10px] font-bold text-green-700">PAYÉ</span>
-                  </div>
+                    ))
+                  )}
                 </div>
-              ));
-            }, [payrollSummary, selectedMonth])}
-          </div>
 
-          <div className="mt-6 pt-4 border-t border-[#c9b896]/30 flex justify-between items-center font-black text-[#8b5a2b]">
-            <span>TOTAL PAYÉ</span>
-            <span className="text-xl text-green-700">{Math.round(globalStats.totalPaid).toLocaleString()} DT</span>
-          </div>
+                <div className="mt-6 pt-4 border-t border-[#c9b896]/30 flex justify-between items-center font-black text-[#8b5a2b]">
+                  <span>TOTAL {viewPaidSelectedDepartment === "all" ? "PAYÉ" : viewPaidSelectedDepartment.toUpperCase()}</span>
+                  <span className="text-xl text-green-700">{Math.round(currentTotal).toLocaleString()} DT</span>
+                </div>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>
