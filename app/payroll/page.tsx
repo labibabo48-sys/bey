@@ -1377,43 +1377,64 @@ export default function PayrollPage() {
 
           <div className="mt-4 space-y-3 max-h-[400px] overflow-y-auto pr-2">
             {useMemo(() => {
-              // Primes come from payroll records, not extras with motif
+              // Get primes from extras table (motif='prime') or payroll.prime field
               const primesList: any[] = [];
-              payrollSummary.forEach((p: any) => {
-                if (p.totalPrimes > 0) {
-                  primesList.push({
-                    user_id: p.userId,
-                    username: p.user.username,
-                    montant: p.totalPrimes,
-                    photo: p.user.photo
-                  });
+
+              // First, get primes from payroll records (prime column)
+              payrollRecords.forEach((record: any) => {
+                if (record.prime > 0) {
+                  const existingUser = primesList.find((p: any) => p.user_id === record.user_id);
+                  const user = users.find((u: any) => u.id === record.user_id);
+
+                  if (existingUser) {
+                    existingUser.total += record.prime;
+                    existingUser.dates.push(record.date);
+                  } else if (user) {
+                    primesList.push({
+                      user_id: record.user_id,
+                      username: user.username,
+                      total: record.prime,
+                      dates: [record.date],
+                      photo: user.photo
+                    });
+                  }
                 }
               });
 
               if (primesList.length === 0) return <div className="text-center py-8 text-[#6b5744]">Aucune prime ce mois-ci</div>;
 
               return primesList.map((entry: any) => (
-                <div key={entry.user_id} className="flex items-center justify-between p-4 rounded-xl border border-[#c9b896]/30 bg-[#f8f6f1]/30 hover:bg-[#f8f6f1] transition-colors">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-full overflow-hidden border border-[#c9b896]/50 bg-white">
-                      {entry.photo ? (
-                        <img src={entry.photo} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="h-full w-full flex items-center justify-center text-[#8b5a2b] font-bold">
-                          {entry.username?.charAt(0)}
-                        </div>
-                      )}
+                <div key={entry.user_id} className="flex flex-col gap-2 p-4 rounded-xl border border-[#c9b896]/30 bg-[#f8f6f1]/30 hover:bg-[#f8f6f1] transition-colors">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-full overflow-hidden border border-[#c9b896]/50 bg-white">
+                        {entry.photo ? (
+                          <img src={entry.photo} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="h-full w-full flex items-center justify-center text-[#8b5a2b] font-bold">
+                            {entry.username?.charAt(0)}
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <p className="font-bold text-[#3d2c1e] text-sm">{entry.username}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-bold text-[#3d2c1e] text-sm">{entry.username}</p>
+                    <div className="text-amber-600 font-black text-sm">
+                      {entry.total.toLocaleString()} DT
                     </div>
                   </div>
-                  <div className="text-amber-600 font-black text-sm">
-                    {entry.montant.toLocaleString()} DT
+                  <div className="flex flex-wrap gap-1.5 pt-2 border-t border-[#c9b896]/10">
+                    <span className="text-[9px] font-black uppercase text-[#6b5744]/50 w-full mb-1">Dates:</span>
+                    {entry.dates.map((d: string, i: number) => (
+                      <span key={i} className="px-2 py-0.5 rounded-full bg-white border border-[#c9b896]/30 text-[10px] font-bold text-[#3d2c1e] shadow-sm">
+                        {format(new Date(d), 'dd MMM yyyy', { locale: fr })}
+                      </span>
+                    ))}
                   </div>
                 </div>
               ));
-            }, [payrollSummary])}
+            }, [payrollRecords, users, selectedMonth])}
           </div>
 
           <div className="mt-6 pt-4 border-t border-[#c9b896]/30 flex justify-between items-center font-black text-[#8b5a2b]">
