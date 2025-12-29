@@ -26,6 +26,8 @@ const GET_PERSONNEL_STATUS = gql`
         base_salary
         is_blocked
       }
+      clockIn
+      clockOut
       state
       shift
       delay
