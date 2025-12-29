@@ -14,25 +14,9 @@ import { Suspense, useEffect, useMemo } from "react"
 import { format } from "date-fns"
 import { fr } from "date-fns/locale"
 
-const GET_DASHBOARD_DATA = gql`
-  query GetDashboardData($date: String, $month: String, $payrollMonth: String!) {
-    getAdvances(month: $month) {
-      id
-      user_id
-      statut
-      montant
-    }
-    getPayroll(month: $payrollMonth) {
-      user_id
-      date
-      present
-      infraction
-      retard
-      prime
-      extra
-      doublage
-      acompte
-    }
+// Split query into smaller parts for better performance
+const GET_PERSONNEL_STATUS = gql`
+  query GetPersonnelStatus($date: String) {
     personnelStatus(date: $date) {
       user {
         id
@@ -41,27 +25,34 @@ const GET_DASHBOARD_DATA = gql`
         departement
         base_salary
         photo
-        zktime_id
         is_blocked
-        status
       }
       clockIn
       clockOut
       state
       shift
-      lastPunch
       delay
       infraction
-      remarque
     }
-    getRetards(date: $date) {
+  }
+`
+
+const GET_FINANCIAL_DATA = gql`
+  query GetFinancialData($month: String, $payrollMonth: String!) {
+    getAdvances(month: $month) {
       id
       user_id
+      montant
     }
-    getAbsents(date: $date) {
-      id
+    getPayroll(month: $payrollMonth) {
       user_id
-      type
+      date
+      present
+      infraction
+      prime
+      extra
+      doublage
+      acompte
     }
     getExtras(month: $payrollMonth) {
       id
@@ -104,17 +95,34 @@ function DashboardContent() {
     return () => clearTimeout(timer);
   }, [today, syncAttendance]);
 
-  const { data, loading, error } = useQuery(GET_DASHBOARD_DATA, {
+  // Split queries for better performance - load personnel status first
+  const { data: personnelData, loading: personnelLoading, error: personnelError } = useQuery(GET_PERSONNEL_STATUS, {
+    variables: { date: today },
+    fetchPolicy: "cache-first",
+    nextFetchPolicy: "cache-first",
+    pollInterval: 30000, // Refresh every 30 seconds
+  });
+
+  const { data: financialData, loading: financialLoading } = useQuery(GET_FINANCIAL_DATA, {
     variables: {
-      date: today,
       month: currentMonth,
       payrollMonth: payrollMonth
     },
     fetchPolicy: "cache-first",
     nextFetchPolicy: "cache-first",
-    notifyOnNetworkStatusChange: false,
-    pollInterval: 60000, // Auto-refresh every 60 seconds
+    skip: !personnelData, // Wait for personnel data first
   });
+
+  const loading = personnelLoading || financialLoading;
+  const error = personnelError;
+  const data = personnelData && financialData ? {
+    personnelStatus: personnelData.personnelStatus,
+    getAdvances: financialData.getAdvances,
+    getPayroll: financialData.getPayroll,
+    getExtras: financialData.getExtras,
+    getRetards: [],
+    getAbsents: []
+  } : null;
 
   const stats = useMemo(() => {
     if (!data) return null;
@@ -201,8 +209,14 @@ function DashboardContent() {
     };
   }, [data]);
 
-  if (loading && !data) {
+  // Show skeleton only if we have no data at all
+  if (personnelLoading && !personnelData) {
     return <DashboardSkeleton />;
+  }
+
+  // Show partial data while financial data loads
+  if (personnelData && financialLoading && !financialData) {
+    // Will render with partial data below
   }
 
   if (error) {

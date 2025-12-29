@@ -1651,13 +1651,15 @@ const resolvers = {
       const dateSQL = formatDateLocal(logicalDay);
       if (!dateSQL) return [];
 
-      // Check cache first (30 second TTL for today, 5 minutes for past dates)
+      // Check cache first (60 second TTL for today, 10 minutes for past dates)
       const isToday = dateSQL === formatDateLocal(getLogicalDate(new Date()));
       const cacheKey = `personnelStatus:${dateSQL}:${filter || 'all'}`;
       const cached = getCached(cacheKey);
       if (cached) {
+        console.log(`[CACHE HIT] personnelStatus for ${dateSQL}`);
         return cached;
       }
+      console.log(`[CACHE MISS] Computing personnelStatus for ${dateSQL}`);
       const dayOfWeekIndex = logicalDay.getDay();
       const dayCols = ['dim', 'lun', 'mar', 'mer', 'jeu', 'ven', 'sam'];
       const dayCol = dayCols[dayOfWeekIndex];
@@ -1906,9 +1908,10 @@ const resolvers = {
         return timeB - timeA;
       });
 
-      // Cache results (30s for today, 5 min for past dates)
-      const cacheTTL = isToday ? 30000 : 300000;
+      // Cache results (60s for today, 10 min for past dates)
+      const cacheTTL = isToday ? 60000 : 600000;
       setCache(cacheKey, results, cacheTTL);
+      console.log(`[CACHE SET] personnelStatus cached for ${dateSQL} (TTL: ${cacheTTL}ms)`);
 
       return results;
     },
