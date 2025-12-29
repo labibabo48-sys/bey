@@ -1668,18 +1668,23 @@ const resolvers = {
       const payrollTableName = `paiecurrent_${monthKey}`;
       await initializePayrollTable(monthKey);
 
-      // Parallelize Fetching
+      // Parallelize Fetching with optimized queries (select only needed fields)
       const [usersRes, schedulesRes, allPunches, retardsRes, absentsRes, payrollRes] = await Promise.all([
         pool.query(`
-          SELECT id, username, role, status, zktime_id, "département" as departement, email, phone, cin, base_salary, photo, is_blocked, permissions 
-          FROM public.users 
+          SELECT id, username, role, status, zktime_id, "département" as departement, base_salary, photo, is_blocked
+          FROM public.users
+          WHERE is_blocked = false OR is_blocked IS NULL
           ORDER BY id ASC
         `),
-        pool.query('SELECT * FROM public.user_schedules'),
+        pool.query('SELECT user_id, dim, lun, mar, mer, jeu, ven, sam FROM public.user_schedules'),
         fetchDayPunches(logicalDay),
-        pool.query('SELECT user_id, reason FROM public.retards WHERE date::date = $1::date', [dateSQL]),
-        pool.query('SELECT user_id, reason, type FROM public.absents WHERE date::date = $1::date', [dateSQL]),
-        pool.query(`SELECT * FROM public."${payrollTableName}" WHERE date = $1`, [dateSQL])
+        pool.query('SELECT user_id, reason FROM public.retards WHERE date = $1', [dateSQL]),
+        pool.query('SELECT user_id, reason, type FROM public.absents WHERE date = $1', [dateSQL]),
+        pool.query(`
+          SELECT user_id, present, infraction, retard, clock_in, clock_out, remarque, updated
+          FROM public."${payrollTableName}"
+          WHERE date = $1
+        `, [dateSQL])
       ]);
 
 
