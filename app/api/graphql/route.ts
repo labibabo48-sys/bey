@@ -407,10 +407,16 @@ const formatDateTimeLocal = (dateInput: Date | string) => {
 };
 
 // Helper to determine shift
+// Helper to get hour in Tunisia timezone (UTC+1)
+const getTunisiaHour = (date: Date): number => {
+  const tunisiaTime = new Date(date.toLocaleString('en-US', { timeZone: 'Africa/Tunis' }));
+  return tunisiaTime.getHours();
+};
+
 const determineShift = (first: Date, last: Date | null, isOngoing: boolean) => {
   if (!first) return "Non défini";
 
-  const startHour = first.getHours();
+  const startHour = getTunisiaHour(first);
 
   // SOIR: Starts afternoon/evening (>= 15:00)
   // User definition: Entrée 15:00 -> Soir
@@ -442,7 +448,7 @@ const determineShift = (first: Date, last: Date | null, isOngoing: boolean) => {
   if (isOngoing) {
     // Simple shift determination logic for live users
     const durationSoFar = (now.getTime() - first.getTime()) / (1000 * 60 * 60);
-    const currentHour = now.getHours();
+    const currentHour = getTunisiaHour(now);
 
     if (durationSoFar > 10 || currentHour >= 18 || currentHour < 7) {
       return "Doublage";
@@ -823,9 +829,10 @@ async function recomputePayrollForDate(targetDateStr: string, specificUserId: st
       const firstP = userPunches[0];
       const firstD = new Date(firstP.device_time);
       const sTypeUpper = (shiftType || "").toUpperCase();
-      if (firstD.getHours() >= 14) {
+      const firstHour = getTunisiaHour(firstD);
+      if (firstHour >= 14) {
         shiftType = "Soir";
-      } else if (firstD.getHours() < 14 && sTypeUpper === "SOIR") {
+      } else if (firstHour < 14 && sTypeUpper === "SOIR") {
         shiftType = "Matin";
       }
     }
@@ -1883,8 +1890,8 @@ const resolvers = {
 
         // Split Shift detection for Chef_Cuisine display
         if (user.departement === 'Chef_Cuisine' && userPunches.length > 0) {
-          const hasMatin = userPunches.some((p: any) => new Date(p.device_time).getHours() < 16);
-          const hasSoir = userPunches.some((p: any) => new Date(p.device_time).getHours() >= 16);
+          const hasMatin = userPunches.some((p: any) => getTunisiaHour(new Date(p.device_time)) < 16);
+          const hasSoir = userPunches.some((p: any) => getTunisiaHour(new Date(p.device_time)) >= 16);
           if (hasMatin && hasSoir) shift = "Coupure (Split)";
           else if (hasMatin) shift = "Coupure (Matin)";
           else if (hasSoir) shift = "Coupure (Soir)";
