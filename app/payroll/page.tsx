@@ -312,6 +312,12 @@ export default function PayrollPage() {
   // Doublage View Dialog State
   const [viewDoublagesOpen, setViewDoublagesOpen] = useState(false)
 
+  // Extras View Dialog State
+  const [viewExtrasOpen, setViewExtrasOpen] = useState(false)
+
+  // Primes View Dialog State
+  const [viewPrimesOpen, setViewPrimesOpen] = useState(false)
+
   const [addExtra, { loading: addingExtra }] = useMutation(ADD_EXTRA)
   const [addDoublage, { loading: addingDoublage }] = useMutation(ADD_DOUBLAGE)
 
@@ -800,13 +806,19 @@ export default function PayrollPage() {
               </Card>
             )}
             {canSee('payroll', 'stats_primes') && (
-              <Card className="border-[#c9b896] bg-white p-4 shadow-md">
+              <Card
+                className="border-[#c9b896] bg-white p-4 shadow-md cursor-pointer hover:bg-[#f8f6f1] transition-colors"
+                onClick={() => setViewPrimesOpen(true)}
+              >
                 <p className="text-sm text-[#6b5744]">Total Primes</p>
                 <p className="text-2xl font-bold text-amber-600">{Math.round(globalStats.totalPrimes)} DT</p>
               </Card>
             )}
             {canSee('payroll', 'stats_extras') && (
-              <Card className="border-[#c9b896] bg-white p-4 shadow-md">
+              <Card
+                className="border-[#c9b896] bg-white p-4 shadow-md cursor-pointer hover:bg-[#f8f6f1] transition-colors"
+                onClick={() => setViewExtrasOpen(true)}
+              >
                 <p className="text-sm text-[#6b5744]">Total Extras</p>
                 <p className="text-2xl font-bold text-emerald-600">{Math.round(globalStats.totalExtras)} DT</p>
               </Card>
@@ -1275,6 +1287,138 @@ export default function PayrollPage() {
           <div className="mt-6 pt-4 border-t border-[#c9b896]/30 flex justify-between items-center font-black text-[#8b5a2b]">
             <span>TOTAL GLOBAL</span>
             <span className="text-xl text-cyan-700">{Math.round(globalStats.totalDoublages).toLocaleString()} DT</span>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Extras List Dialog */}
+      <Dialog open={viewExtrasOpen} onOpenChange={setViewExtrasOpen}>
+        <DialogContent className="bg-white border-[#c9b896] sm:max-w-[500px] rounded-2xl p-6 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold text-[#8b5a2b] flex items-center gap-2">
+              <Award className="h-5 w-5 text-emerald-600" /> Liste des Extras
+            </DialogTitle>
+            <p className="text-sm text-[#6b5744]">Extras pour {format(selectedMonth, 'MMMM yyyy', { locale: fr })}</p>
+          </DialogHeader>
+
+          <div className="mt-4 space-y-3 max-h-[400px] overflow-y-auto pr-2">
+            {useMemo(() => {
+              const extrasList = data?.getExtras || [];
+              if (extrasList.length === 0) return <div className="text-center py-8 text-[#6b5744]">Aucun extra ce mois-ci</div>;
+
+              // Aggregate by user
+              const userMap = new Map();
+              extrasList.forEach((e: any) => {
+                if (!userMap.has(e.user_id)) {
+                  const user = users.find((u: any) => u.id === e.user_id);
+                  userMap.set(e.user_id, {
+                    id: e.user_id,
+                    username: user?.username || 'Inconnu',
+                    total: 0,
+                    dates: [],
+                    photo: user?.photo
+                  });
+                }
+                const userEntry = userMap.get(e.user_id);
+                userEntry.total += e.montant;
+                userEntry.dates.push(e.date_extra);
+              });
+
+              return Array.from(userMap.values()).map((entry: any) => (
+                <div key={entry.id} className="flex flex-col gap-2 p-4 rounded-xl border border-[#c9b896]/30 bg-[#f8f6f1]/30 hover:bg-[#f8f6f1] transition-colors">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-full overflow-hidden border border-[#c9b896]/50 bg-white">
+                        {entry.photo ? (
+                          <img src={entry.photo} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="h-full w-full flex items-center justify-center text-[#8b5a2b] font-bold">
+                            {entry.username?.charAt(0)}
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <p className="font-bold text-[#3d2c1e] text-sm">{entry.username}</p>
+                      </div>
+                    </div>
+                    <div className="text-emerald-600 font-black text-sm">
+                      {entry.total.toLocaleString()} DT
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 pt-2 border-t border-[#c9b896]/10">
+                    <span className="text-[9px] font-black uppercase text-[#6b5744]/50 w-full mb-1">Dates:</span>
+                    {entry.dates.map((d: string, i: number) => (
+                      <span key={i} className="px-2 py-0.5 rounded-full bg-white border border-[#c9b896]/30 text-[10px] font-bold text-[#3d2c1e] shadow-sm">
+                        {format(new Date(d), 'dd MMM yyyy', { locale: fr })}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ));
+            }, [data?.getExtras, users, selectedMonth])}
+          </div>
+
+          <div className="mt-6 pt-4 border-t border-[#c9b896]/30 flex justify-between items-center font-black text-[#8b5a2b]">
+            <span>TOTAL GLOBAL</span>
+            <span className="text-xl text-emerald-700">{Math.round(globalStats.totalExtras).toLocaleString()} DT</span>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Primes List Dialog */}
+      <Dialog open={viewPrimesOpen} onOpenChange={setViewPrimesOpen}>
+        <DialogContent className="bg-white border-[#c9b896] sm:max-w-[500px] rounded-2xl p-6 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold text-[#8b5a2b] flex items-center gap-2">
+              <Award className="h-5 w-5 text-amber-600" /> Liste des Primes
+            </DialogTitle>
+            <p className="text-sm text-[#6b5744]">Primes pour {format(selectedMonth, 'MMMM yyyy', { locale: fr })}</p>
+          </DialogHeader>
+
+          <div className="mt-4 space-y-3 max-h-[400px] overflow-y-auto pr-2">
+            {useMemo(() => {
+              // Primes come from payroll records, not extras with motif
+              const primesList: any[] = [];
+              payrollSummary.forEach((p: any) => {
+                if (p.totalPrimes > 0) {
+                  primesList.push({
+                    user_id: p.userId,
+                    username: p.user.username,
+                    montant: p.totalPrimes,
+                    photo: p.user.photo
+                  });
+                }
+              });
+
+              if (primesList.length === 0) return <div className="text-center py-8 text-[#6b5744]">Aucune prime ce mois-ci</div>;
+
+              return primesList.map((entry: any) => (
+                <div key={entry.user_id} className="flex items-center justify-between p-4 rounded-xl border border-[#c9b896]/30 bg-[#f8f6f1]/30 hover:bg-[#f8f6f1] transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full overflow-hidden border border-[#c9b896]/50 bg-white">
+                      {entry.photo ? (
+                        <img src={entry.photo} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="h-full w-full flex items-center justify-center text-[#8b5a2b] font-bold">
+                          {entry.username?.charAt(0)}
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <p className="font-bold text-[#3d2c1e] text-sm">{entry.username}</p>
+                    </div>
+                  </div>
+                  <div className="text-amber-600 font-black text-sm">
+                    {entry.montant.toLocaleString()} DT
+                  </div>
+                </div>
+              ));
+            }, [payrollSummary])}
+          </div>
+
+          <div className="mt-6 pt-4 border-t border-[#c9b896]/30 flex justify-between items-center font-black text-[#8b5a2b]">
+            <span>TOTAL GLOBAL</span>
+            <span className="text-xl text-amber-700">{Math.round(globalStats.totalPrimes).toLocaleString()} DT</span>
           </div>
         </DialogContent>
       </Dialog>
