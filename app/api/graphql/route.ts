@@ -1,17 +1,6 @@
 import { ApolloServer } from '@apollo/server';
 import { startServerAndCreateNextHandler } from '@as-integrations/next';
 import { NextRequest } from 'next/server';
-
-// Silence url.parse() deprecation warning in Vercel logs
-if (typeof process !== 'undefined' && process.emitWarning) {
-  const originalEmitWarning = process.emitWarning;
-  (process as any).emitWarning = function (warning: any, ...args: any[]) {
-    const message = warning instanceof Error ? warning.message : String(warning);
-    if (message.includes('DEP0169')) return;
-    return (originalEmitWarning as any).apply(process, [warning, ...args]);
-  };
-}
-
 import pool from '@/lib/db';
 
 const typeDefs = `#graphql
