@@ -1,0 +1,6 @@
+{
+  "env": {
+    "NODE_OPTIONS": "--no-deprecation"
+  },
+  "buildCommand": "NODE_OPTIONS='--no-deprecation' next build"
+}
