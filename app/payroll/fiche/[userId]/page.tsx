@@ -23,7 +23,7 @@ import {
     DialogFooter,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { ChevronLeft, FileText, Printer, Save, RefreshCw, AlertCircle, TrendingUp, TrendingDown, Wallet, CheckCircle, XCircle, Loader2 } from "lucide-react"
+import { ChevronLeft, FileText, Printer, Save, RefreshCw, AlertCircle, TrendingUp, TrendingDown, Wallet, CheckCircle, XCircle, Loader2, RotateCcw } from "lucide-react"
 import { useState, useMemo, useEffect } from "react"
 import { gql, useQuery, useMutation } from "@apollo/client"
 import { useParams, useRouter } from "next/navigation"
@@ -98,6 +98,18 @@ const UPDATE_PAYROLL_RECORD = gql`
   }
 `
 
+const PAY_USER = gql`
+  mutation PayUser($month: String!, $userId: ID!) {
+    payUser(month: $month, userId: $userId)
+  }
+`
+
+const UNPAY_USER = gql`
+  mutation UnpayUser($month: String!, $userId: ID!) {
+    unpayUser(month: $month, userId: $userId)
+  }
+`
+
 export default function UserFichePage() {
     const { userId } = useParams()
     const router = useRouter()
@@ -124,6 +136,8 @@ export default function UserFichePage() {
     const [initPayroll] = useMutation(INIT_PAYROLL)
     const [syncAttendance, { loading: syncing }] = useMutation(SYNC_ATTENDANCE)
     const [updateRecord] = useMutation(UPDATE_PAYROLL_RECORD)
+    const [payUser, { loading: paying }] = useMutation(PAY_USER)
+    const [unpayUser, { loading: unpaying }] = useMutation(UNPAY_USER)
 
     const [editingId, setEditingId] = useState<string | null>(null)
     const [showRedirectDialog, setShowRedirectDialog] = useState(false)
@@ -211,6 +225,36 @@ export default function UserFichePage() {
         // Sync today and yesterday
         await syncAttendance({ variables: { date: format(new Date(), 'yyyy-MM-dd') } })
         await refetchPayroll()
+    }
+
+    const handlePay = async () => {
+        if (!userId || paying || unpaying) return
+        try {
+            await payUser({
+                variables: {
+                    month: selectedMonth,
+                    userId: String(userId)
+                }
+            })
+            await refetchPayroll()
+        } catch (err) {
+            console.error("Pay Error:", err)
+        }
+    }
+
+    const handleUnpay = async () => {
+        if (!userId || paying || unpaying) return
+        try {
+            await unpayUser({
+                variables: {
+                    month: selectedMonth,
+                    userId: String(userId)
+                }
+            })
+            await refetchPayroll()
+        } catch (err) {
+            console.error("Unpay Error:", err)
+        }
     }
 
     const startEdit = (record: any) => {
@@ -400,6 +444,31 @@ export default function UserFichePage() {
                             >
                                 <RefreshCw className={cn("h-5 w-5 mr-2", syncing && "animate-spin")} />
                                 {stats.isPaid ? "Verrouillé" : "Sync"}
+                            </Button>
+
+                            <Button
+                                onClick={stats.isPaid ? handleUnpay : handlePay}
+                                disabled={paying || unpaying}
+                                className={cn(
+                                    "text-white shadow-md transition-all",
+                                    stats.isPaid
+                                        ? "bg-red-600 hover:bg-red-700"
+                                        : "bg-emerald-600 hover:bg-emerald-700"
+                                )}
+                            >
+                                {paying || unpaying ? (
+                                    <Loader2 className="h-5 w-5 animate-spin" />
+                                ) : stats.isPaid ? (
+                                    <>
+                                        <RotateCcw className="h-5 w-5 mr-2" />
+                                        Annuler Paiement
+                                    </>
+                                ) : (
+                                    <>
+                                        <Wallet className="h-5 w-5 mr-2" />
+                                        Payer
+                                    </>
+                                )}
                             </Button>
 
                             <Button
