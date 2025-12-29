@@ -52,40 +52,6 @@ export function AttendanceHistoryModal({ userId, userName, isOpen, onClose }: At
         }
     }, [userId, startDate, endDate, isOpen, getHistory]);
 
-    const formatDuration = (clockIn: string, clockOut: string, recordDate: string) => {
-        if (!clockIn || clockIn === "-" || clockIn === "--:--") return "-";
-
-        try {
-            const [h1, m1] = clockIn.split(':').map(Number);
-            let endMins;
-
-            if (clockOut && clockOut !== "-" && clockOut !== "--:--") {
-                const [h2, m2] = clockOut.split(':').map(Number);
-                endMins = h2 * 60 + m2;
-            } else {
-                // Check if it's today
-                const today = new Date();
-                const todayStr = today.toISOString().split('T')[0];
-                if (recordDate === todayStr) {
-                    endMins = today.getHours() * 60 + today.getMinutes();
-                } else {
-                    return "-";
-                }
-            }
-
-            if (isNaN(h1) || isNaN(m1) || endMins === undefined) return "-";
-
-            let startMins = h1 * 60 + m1;
-            if (endMins < startMins) endMins += 24 * 60; // Overnight
-            const totalMins = endMins - startMins;
-            const h = Math.floor(totalMins / 60);
-            const m = totalMins % 60;
-            return `${h}h ${m}m`;
-        } catch (e) {
-            return "-";
-        }
-    };
-
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
             <DialogContent className="w-[95vw] sm:max-w-[700px] md:max-w-[850px] max-h-[90vh] bg-white border-[#c9b896] p-3 sm:p-6 overflow-hidden flex flex-col">
@@ -144,7 +110,6 @@ export function AttendanceHistoryModal({ userId, userName, isOpen, onClose }: At
                                         <th className="p-3 text-left font-bold text-[#6b5744] text-[11px] uppercase tracking-wider">Entrée</th>
                                         <th className="p-3 text-left font-bold text-[#6b5744] text-[11px] uppercase tracking-wider">Sortie</th>
                                         <th className="p-3 text-left font-bold text-[#6b5744] text-[11px] uppercase tracking-wider">Shift</th>
-                                        <th className="p-3 text-left font-bold text-[#6b5744] text-[11px] uppercase tracking-wider text-center">Heures</th>
                                         <th className="p-3 text-left font-bold text-[#6b5744] text-[11px] uppercase tracking-wider">Détails (Raw)</th>
                                     </tr>
                                 </thead>
@@ -155,9 +120,6 @@ export function AttendanceHistoryModal({ userId, userName, isOpen, onClose }: At
                                             <td className="p-3 font-bold text-emerald-700">{record.clockIn || "-"}</td>
                                             <td className="p-3 font-bold text-blue-700">{record.clockOut || "-"}</td>
                                             <td className="p-3 text-[#3d2c1e] font-semibold">{record.shift || "-"}</td>
-                                            <td className="p-3 text-center text-emerald-700 font-bold whitespace-nowrap">
-                                                {formatDuration(record.clockIn, record.clockOut, record.date)}
-                                            </td>
                                             <td className="p-3 text-[11px] text-[#6b5744] font-mono break-all max-w-[200px]">
                                                 {record.raw_punches?.join(', ') || "Aucun"}
                                             </td>
@@ -176,22 +138,18 @@ export function AttendanceHistoryModal({ userId, userName, isOpen, onClose }: At
                                         <span className="font-mono font-bold text-[#3d2c1e]">{record.date}</span>
                                     </div>
 
-                                    <div className="grid grid-cols-4 gap-2">
+                                    <div className="grid grid-cols-3 gap-2">
                                         <div className="flex flex-col">
                                             <span className="text-[10px] text-[#6b5744] uppercase font-bold">Entrée</span>
-                                            <span className="text-emerald-700 font-black text-xs">{record.clockIn || "--:--"}</span>
+                                            <span className="text-emerald-700 font-black text-base">{record.clockIn || "--:--"}</span>
                                         </div>
                                         <div className="flex flex-col">
                                             <span className="text-[10px] text-[#6b5744] uppercase font-bold">Sortie</span>
-                                            <span className="text-blue-700 font-black text-xs">{record.clockOut || "--:--"}</span>
-                                        </div>
-                                        <div className="flex flex-col">
-                                            <span className="text-[10px] text-[#6b5744] uppercase font-bold">Heures</span>
-                                            <span className="text-emerald-700 font-black text-xs">{formatDuration(record.clockIn, record.clockOut, record.date)}</span>
+                                            <span className="text-blue-700 font-black text-base">{record.clockOut || "--:--"}</span>
                                         </div>
                                         <div className="flex flex-col text-right">
                                             <span className="text-[10px] text-[#6b5744] uppercase font-bold">Shift</span>
-                                            <span className="text-[#3d2c1e] font-bold text-xs">{record.shift || "-"}</span>
+                                            <span className="text-[#3d2c1e] font-bold">{record.shift || "-"}</span>
                                         </div>
                                     </div>
 

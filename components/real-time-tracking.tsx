@@ -152,25 +152,14 @@ export function RealTimeTracking({ initialData }: { initialData?: any }) {
 
         // Calculate total minutes worked
         let totalMins = 0;
-        if (clockIn && clockIn !== "--:--") {
+        if (clockIn && clockOut) {
           try {
             const [h1, m1] = clockIn.split(':').map(Number);
-            let endMins;
-
-            if (clockOut && clockOut !== "--:--") {
-              const [h2, m2] = clockOut.split(':').map(Number);
-              endMins = h2 * 60 + m2;
-            } else if (status === "Présent" || status === "Retard" || status === "Missing_Exit") {
-              // Only calculate live if viewing today
-              const now = new Date();
-              endMins = now.getHours() * 60 + now.getMinutes();
-            }
-
-            if (endMins !== undefined) {
-              let startMins = h1 * 60 + m1;
-              if (endMins < startMins) endMins += 24 * 60; // Overnight
-              totalMins = endMins - startMins;
-            }
+            const [h2, m2] = clockOut.split(':').map(Number);
+            let startMins = h1 * 60 + m1;
+            let endMins = h2 * 60 + m2;
+            if (endMins < startMins) endMins += 24 * 60; // Overnight
+            totalMins = endMins - startMins;
           } catch (e) { }
         }
 

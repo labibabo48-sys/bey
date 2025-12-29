@@ -14,7 +14,7 @@ import { Suspense, useEffect, useMemo } from "react"
 import { format } from "date-fns"
 import { fr } from "date-fns/locale"
 
-// Split query into smaller parts for better performance
+// Optimized query - fetch only active users
 const GET_PERSONNEL_STATUS = gql`
   query GetPersonnelStatus($date: String) {
     personnelStatus(date: $date) {
@@ -24,15 +24,11 @@ const GET_PERSONNEL_STATUS = gql`
         role
         departement
         base_salary
-        photo
         is_blocked
       }
-      clockIn
-      clockOut
       state
       shift
       delay
-      infraction
     }
   }
 `
@@ -98,8 +94,9 @@ function DashboardContent() {
   // Split queries for better performance - load personnel status first
   const { data: personnelData, loading: personnelLoading, error: personnelError } = useQuery(GET_PERSONNEL_STATUS, {
     variables: { date: today },
-    fetchPolicy: "network-only", // Temporarily disable cache to see real performance
-    pollInterval: 30000,
+    fetchPolicy: "cache-and-network",
+    nextFetchPolicy: "cache-first",
+    pollInterval: 60000, // Poll every 60 seconds
     onCompleted: (data) => {
       console.log('[Dashboard] Personnel data loaded:', data?.personnelStatus?.length, 'employees');
     },
@@ -113,7 +110,8 @@ function DashboardContent() {
       month: currentMonth,
       payrollMonth: payrollMonth
     },
-    fetchPolicy: "network-only", // Temporarily disable cache
+    fetchPolicy: "cache-and-network",
+    nextFetchPolicy: "cache-first",
     skip: !personnelData,
     onCompleted: (data) => {
       console.log('[Dashboard] Financial data loaded');

@@ -168,7 +168,6 @@ const typeDefs = `#graphql
     clock_in: String
     clock_out: String
     updated: Boolean
-    paid: Boolean
   }
 
   type PerformanceStats {
@@ -190,7 +189,6 @@ const typeDefs = `#graphql
     remarque: String
     clock_in: String
     clock_out: String
-    paid: Boolean
   }
 
   type Query {
@@ -253,7 +251,6 @@ const typeDefs = `#graphql
     updateDoublage(id: ID!, montant: Float, date: String): Doublage
     initPayrollMonth(month: String!): Boolean
     updatePayrollRecord(month: String!, id: ID!, input: PayrollInput!): PayrollRecord
-    payUser(month: String!, userId: ID!): Boolean
     uploadCinCard(userId: ID!, cinPhotoFront: String, cinPhotoBack: String): CardCin
     createLoginAccount(username: String!, password: String!, role: String!, permissions: String): User
     updateLoginAccount(id: ID!, username: String, password: String, role: String, permissions: String): User
@@ -309,12 +306,6 @@ const getCached = (key: string): any | null => {
 };
 
 const setCache = (key: string, data: any, ttl: number = 30000) => {
-  // Limit cache size to prevent memory leaks
-  if (cache.size > 100) {
-    const firstKey = cache.keys().next().value;
-    cache.delete(firstKey);
-  }
-
   cache.set(key, {
     data,
     timestamp: Date.now(),
@@ -571,27 +562,61 @@ const initializedMonths = new Set();
 const inProgressInitializations = new Map();
 
 async function initializePayrollTable(month: string) {
-  if (!/^\d{4}_\d{2}$/.test(month)) throw new Error("Format de mois invalide. Utilisez YYYY_MM");
   const tableName = `paiecurrent_${month}`;
 
-  // Check if we've already initialized this month in this process
+  // Fast path: Check existence and run migrations if table exists
+  try {
+    const check = await pool.query(`SELECT count(*) FROM public."${tableName}"`);
+    if (parseInt(check.rows[0].count) > 0) {
+      // Table exists, ensure it has the latest columns
+      try {
+        await pool.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS retard INT DEFAULT 0`);
+        await pool.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS prime FLOAT DEFAULT 0`);
+        await pool.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS infraction FLOAT DEFAULT 0`);
+        await pool.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS doublage FLOAT DEFAULT 0`);
+        await pool.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS mise_a_pied FLOAT DEFAULT 0`);
+        await pool.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS clock_in VARCHAR(50)`);
+        await pool.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS clock_out VARCHAR(50)`);
+        await pool.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS updated BOOLEAN DEFAULT FALSE`);
+      } catch (migrationError) {
+        console.error("Migration error:", migrationError);
+      }
+      initializedMonths.add(month);
+      return true;
+    }
+  } catch (e) {
+    // Table likely doesn't exist, proceed to safe initialization
+  }
+
   if (initializedMonths.has(month)) return true;
   if (inProgressInitializations.has(month)) return inProgressInitializations.get(month);
 
   const initPromise = (async () => {
+    const tableName = `paiecurrent_${month}`;
+    if (!/^\d{4}_\d{2}$/.test(month)) throw new Error("Format de mois invalide. Utilisez YYYY_MM");
+
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
       const lockId = 123456789 + parseInt(month.replace('_', ''));
       await client.query('SELECT pg_advisory_xact_lock($1)', [lockId]);
 
-      // Create the table if it doesn't exist
       await client.query(`
-        CREATE TABLE IF NOT EXISTS public."${tableName}" (
+        CREATE TABLE IF NOT EXISTS public.doublages(
+        id SERIAL PRIMARY KEY,
+        user_id INT,
+        username VARCHAR(100),
+        montant FLOAT,
+        date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+      `);
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS public."${tableName}"(
           id SERIAL PRIMARY KEY,
-          user_id INT NOT NULL,
+          user_id INT,
           username VARCHAR(100),
-          date DATE NOT NULL,
+          date DATE,
           present INT DEFAULT 0,
           acompte FLOAT DEFAULT 0,
           extra FLOAT DEFAULT 0,
@@ -603,51 +628,55 @@ async function initializePayrollTable(month: string) {
           remarque TEXT,
           clock_in VARCHAR(50),
           clock_out VARCHAR(50),
-          updated BOOLEAN NOT NULL DEFAULT FALSE,
-          paid BOOLEAN NOT NULL DEFAULT FALSE,
+          updated BOOLEAN DEFAULT FALSE,
           UNIQUE(user_id, date)
         )
       `);
+      try {
+        await client.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS retard INT DEFAULT 0`);
+        await client.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS prime FLOAT DEFAULT 0`);
+        await client.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS infraction FLOAT DEFAULT 0`);
+        await client.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS doublage FLOAT DEFAULT 0`);
+        await client.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS mise_a_pied FLOAT DEFAULT 0`);
+        await client.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS clock_in VARCHAR(50)`);
+        await client.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS clock_out VARCHAR(50)`);
+        await client.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS updated BOOLEAN DEFAULT FALSE`);
 
-      // Ensure all columns exist (Self-healing migration)
-      const cols = [
-        { name: 'retard', type: 'INT', def: '0' },
-        { name: 'prime', type: 'FLOAT', def: '0' },
-        { name: 'infraction', type: 'FLOAT', def: '0' },
-        { name: 'doublage', type: 'FLOAT', def: '0' },
-        { name: 'mise_a_pied', type: 'FLOAT', def: '0' },
-        { name: 'clock_in', type: 'VARCHAR(50)', def: 'NULL' },
-        { name: 'clock_out', type: 'VARCHAR(50)', def: 'NULL' },
-        { name: 'updated', type: 'BOOLEAN', def: 'FALSE', notNull: true },
-        { name: 'paid', type: 'BOOLEAN', def: 'FALSE', notNull: true }
-      ];
-
-      for (const col of cols) {
-        await client.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS "${col.name}" ${col.type} ${col.def !== 'NULL' ? `DEFAULT ${col.def}` : ''}`);
-        if (col.notNull) {
-          await client.query(`UPDATE public."${tableName}" SET "${col.name}" = ${col.def} WHERE "${col.name}" IS NULL`);
-          await client.query(`ALTER TABLE public."${tableName}" ALTER COLUMN "${col.name}" SET NOT NULL`);
-        }
+        await client.query(`
+          DO $$
+          BEGIN 
+            IF EXISTS(
+              SELECT 1 FROM information_schema.columns 
+              WHERE table_name = '${tableName}' AND column_name = 'mise_a_pied' AND data_type = 'boolean'
+            ) THEN
+              ALTER TABLE public."${tableName}" ALTER COLUMN mise_a_pied DROP DEFAULT;
+              ALTER TABLE public."${tableName}" ALTER COLUMN mise_a_pied TYPE FLOAT USING(CASE WHEN mise_a_pied THEN 1.0 ELSE 0.0 END);
+              ALTER TABLE public."${tableName}" ALTER COLUMN mise_a_pied SET DEFAULT 0;
+            END IF;
+          END $$;
+        `);
+      } catch (e) {
+        console.error("Self-healing schema error:", e);
       }
 
-      // Pre-fill the month with all active users (Always check for new users)
-      const [year, monthNum] = month.split('_').map(Number);
-      const daysInMonth = new Date(year, monthNum, 0).getDate();
-      const usersRes = await client.query('SELECT id, username FROM public.users WHERE is_blocked = FALSE');
+      const check = await client.query(`SELECT count(*) FROM public."${tableName}"`);
+      if (parseInt(check.rows[0].count) === 0) {
+        const [year, monthIdx] = month.split('_').map(Number);
+        const daysInMonth = new Date(year, monthIdx, 0).getDate();
+        const usersRes = await client.query('SELECT id, username FROM public.users');
 
-      for (const user of usersRes.rows) {
-        for (let d = 1; d <= daysInMonth; d++) {
-          const dateStr = `${year}-${String(monthNum).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-          await client.query(`INSERT INTO public."${tableName}"(user_id, username, date) VALUES($1, $2, $3) ON CONFLICT DO NOTHING`, [user.id, user.username, dateStr]);
+        for (const user of usersRes.rows) {
+          for (let d = 1; d <= daysInMonth; d++) {
+            const dateStr = `${year}-${String(monthIdx).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+            await client.query(`INSERT INTO public."${tableName}"(user_id, username, date) VALUES($1, $2, $3) ON CONFLICT DO NOTHING`, [user.id, user.username, dateStr]);
+          }
         }
       }
-
       await client.query('COMMIT');
       initializedMonths.add(month);
       return true;
     } catch (e) {
       await client.query('ROLLBACK');
-      console.error(`Error initializing table ${tableName}:`, e);
       throw e;
     } finally {
       client.release();
@@ -662,34 +691,6 @@ async function initializePayrollTable(month: string) {
   }
 }
 
-async function migrateAllPayrollTables() {
-  try {
-    const tablesRes = await pool.query(`
-      SELECT table_name
-      FROM information_schema.tables
-      WHERE table_schema = 'public'
-      AND table_name LIKE 'paiecurrent_%'
-    `);
-
-    for (const row of tablesRes.rows) {
-      const tableName = row.table_name;
-      try {
-        await pool.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS clock_in VARCHAR(50)`);
-        await pool.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS clock_out VARCHAR(50)`);
-        await pool.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS updated BOOLEAN DEFAULT FALSE`);
-        await pool.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS paid BOOLEAN DEFAULT FALSE`);
-        await pool.query(`UPDATE public."${tableName}" SET updated = FALSE WHERE updated IS NULL`);
-        await pool.query(`UPDATE public."${tableName}" SET paid = FALSE WHERE paid IS NULL`);
-        await pool.query(`ALTER TABLE public."${tableName}" ALTER COLUMN updated SET NOT NULL`);
-        await pool.query(`ALTER TABLE public."${tableName}" ALTER COLUMN paid SET NOT NULL`);
-      } catch (err) {
-        console.error(`Error migrating table ${tableName}:`, err);
-      }
-    }
-  } catch (err) {
-    console.error("Migration error:", err);
-  }
-}
 async function recomputePayrollForDate(targetDateStr: string, specificUserId: string | null = null) {
   invalidateCache();
   const todayNow = new Date();
@@ -723,9 +724,9 @@ async function recomputePayrollForDate(targetDateStr: string, specificUserId: st
   // Bulk fetch all data for this date to avoid N+1 queries
   const retardsRes = await pool.query('SELECT * FROM public.retards WHERE date::date = $1::date', [dateSQL]);
   const absentsRes = await pool.query('SELECT * FROM public.absents WHERE date::date = $1::date', [dateSQL]);
-  const advancesRes = await pool.query(`SELECT user_id, SUM(montant) as total FROM public.avances WHERE date:: date = $1::date AND(statut = 'Payé' OR statut = 'Validé' OR statut = 'En attente') GROUP BY user_id`, [dateSQL]);
-  const extrasRes = await pool.query(`SELECT * FROM public.extras WHERE date_extra:: date = $1:: date`, [dateSQL]);
-  const doublagesRes = await pool.query(`SELECT user_id, SUM(montant) as total FROM public.doublages WHERE date:: date = $1::date GROUP BY user_id`, [dateSQL]);
+  const advancesRes = await pool.query(`SELECT user_id, SUM(montant) as total FROM public.avances WHERE date::date = $1::date AND (statut = 'Payé' OR statut = 'Validé' OR statut = 'En attente') GROUP BY user_id`, [dateSQL]);
+  const extrasRes = await pool.query(`SELECT * FROM public.extras WHERE date_extra::date = $1::date`, [dateSQL]);
+  const doublagesRes = await pool.query(`SELECT user_id, SUM(montant) as total FROM public.doublages WHERE date::date = $1::date GROUP BY user_id`, [dateSQL]);
 
   // Notification check optimization
   const notificationsRes = await pool.query("SELECT message FROM public.notifications WHERE timestamp::date = $1::date", [dateSQL]);
@@ -794,7 +795,7 @@ async function recomputePayrollForDate(targetDateStr: string, specificUserId: st
         const exists = Array.from(notificationMessages).some((m: string) => m.includes(msgKey));
         if (!exists) {
           const finalUid = user.id || user.user_id;
-          await createNotification('pointage', `Pointage ${type}`, `${user.username} a pointé son ${type} à ${formatTime(pTimeStr)}.[REF:${msgKey}]`, finalUid, "Machine ZKTeco", `/attendance?userId=${finalUid}&date=${dateSQL}`);
+          await createNotification('pointage', `Pointage ${type}`, `${user.username} a pointé son ${type} à ${formatTime(pTimeStr)}. [REF:${msgKey}]`, finalUid, "Machine ZKTeco", `/attendance?userId=${finalUid}&date=${dateSQL}`);
           notificationMessages.add(`[REF:${msgKey}]`); // Add to local set to avoid duplicates in same run
         }
       }
@@ -1050,8 +1051,8 @@ async function recomputePayrollForDate(targetDateStr: string, specificUserId: st
     // However, for the current day, we prioritize live data from ZK machine.
 
     await pool.query(
-      `INSERT INTO public.\"${payrollTableName}\"(user_id, username, date, present, acompte, extra, prime, infraction, doublage, mise_a_pied, retard, remarque, clock_in, clock_out, updated, paid)
-        VALUES($10, $12, $11, $1, $2, $3, $4, $5, $6, $7, $8, $9, $13, $14, FALSE, FALSE)
+      `INSERT INTO public.\"${payrollTableName}\"(user_id, username, date, present, acompte, extra, prime, infraction, doublage, mise_a_pied, retard, remarque, clock_in, clock_out, updated)
+        VALUES($10, $12, $11, $1, $2, $3, $4, $5, $6, $7, $8, $9, $13, $14, FALSE)
          ON CONFLICT(user_id, date) DO UPDATE SET
         present = CASE WHEN public.\"${payrollTableName}\".updated = TRUE THEN public.\"${payrollTableName}\".present ELSE EXCLUDED.present END,
           acompte = CASE WHEN public.\"${payrollTableName}\".updated = TRUE THEN public.\"${payrollTableName}\".acompte ELSE EXCLUDED.acompte END,
@@ -1063,15 +1064,45 @@ async function recomputePayrollForDate(targetDateStr: string, specificUserId: st
           retard = CASE WHEN public.\"${payrollTableName}\".updated = TRUE THEN public.\"${payrollTableName}\".retard ELSE EXCLUDED.retard END,
           remarque = CASE WHEN public.\"${payrollTableName}\".updated = TRUE THEN public.\"${payrollTableName}\".remarque ELSE EXCLUDED.remarque END,
           clock_in = CASE WHEN public.\"${payrollTableName}\".updated = TRUE THEN public.\"${payrollTableName}\".clock_in ELSE EXCLUDED.clock_in END,
-          clock_out = CASE WHEN public.\"${payrollTableName}\".updated = TRUE THEN public.\"${payrollTableName}\".clock_out ELSE EXCLUDED.clock_out END,
-          paid = public.\"${payrollTableName}\".paid`,
+          clock_out = CASE WHEN public.\"${payrollTableName}\".updated = TRUE THEN public.\"${payrollTableName}\".clock_out ELSE EXCLUDED.clock_out END`,
       [finalPresent, totalAdvance, dayExtra, dayPrime, dayInfraction, dayDoublage, miseAPiedDays, retardMins, finalRemark, user.id, dateSQL, user.username, clockIn, clockOut]
     );
   }));
   invalidateCache();
 }
 
-// Migration call moved to earlier in the file or handled elsewhere
+// One-time migration to add clock_in and clock_out columns to all existing payroll tables
+async function migrateAllPayrollTables() {
+  try {
+    // Get all tables that match the pattern paiecurrent_YYYY_MM
+    const tablesRes = await pool.query(`
+      SELECT table_name
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+      AND table_name LIKE 'paiecurrent_%'
+    `);
+
+    for (const row of tablesRes.rows) {
+      const tableName = row.table_name;
+      try {
+        await pool.query(`ALTER TABLE public.\"${tableName}\" ADD COLUMN IF NOT EXISTS clock_in VARCHAR(50)`);
+        await pool.query(`ALTER TABLE public.\"${tableName}\" ADD COLUMN IF NOT EXISTS clock_out VARCHAR(50)`);
+        await pool.query(`ALTER TABLE public.\"${tableName}\" ADD COLUMN IF NOT EXISTS updated BOOLEAN DEFAULT FALSE`);
+      } catch (err) {
+        console.error(`Error migrating table ${tableName}:`, err);
+      }
+    }
+  } catch (err) {
+    console.error("Migration error:", err);
+  }
+}
+
+// Run migration on startup
+migrateAllPayrollTables().then(() => {
+}).catch(err => {
+  console.error("Migration failed:", err);
+});
+
 const resolvers = {
   Query: {
     getUserSchedule: async (_: any, { userId }: { userId: string }) => {
@@ -1493,12 +1524,11 @@ const resolvers = {
             extra: totalExtra,
             prime: totalPrime,
             doublage: totalDoublage,
+            infraction: Math.max(r.infraction || 0, totalInfraction),
             mise_a_pied: finalMiseAPied,
             present: finalPresent,
             remarque: finalRemark,
-            retard: finalRetard,
-            paid: !!r.paid,
-            infraction: finalInfraction
+            retard: finalRetard
           };
         });
 
@@ -1651,15 +1681,13 @@ const resolvers = {
       const dateSQL = formatDateLocal(logicalDay);
       if (!dateSQL) return [];
 
-      // Check cache first (60 second TTL for today, 10 minutes for past dates)
+      // Check cache first (30 second TTL for today, 5 minutes for past dates)
       const isToday = dateSQL === formatDateLocal(getLogicalDate(new Date()));
-      const cacheKey = `personnelStatus:${dateSQL}:${filter || 'all'}`;
+      const cacheKey = `personnelStatus:${dateSQL}`;
       const cached = getCached(cacheKey);
       if (cached) {
-        console.log(`[CACHE HIT] personnelStatus for ${dateSQL}`);
         return cached;
       }
-      console.log(`[CACHE MISS] Computing personnelStatus for ${dateSQL}`);
       const dayOfWeekIndex = logicalDay.getDay();
       const dayCols = ['dim', 'lun', 'mar', 'mer', 'jeu', 'ven', 'sam'];
       const dayCol = dayCols[dayOfWeekIndex];
@@ -1668,23 +1696,18 @@ const resolvers = {
       const payrollTableName = `paiecurrent_${monthKey}`;
       await initializePayrollTable(monthKey);
 
-      // Parallelize Fetching with optimized queries (select only needed fields)
+      // Parallelize Fetching
       const [usersRes, schedulesRes, allPunches, retardsRes, absentsRes, payrollRes] = await Promise.all([
         pool.query(`
-          SELECT id, username, role, status, zktime_id, "département" as departement, base_salary, photo, is_blocked
-          FROM public.users
-          WHERE is_blocked = false OR is_blocked IS NULL
+          SELECT id, username, role, status, zktime_id, "département" as departement, email, phone, cin, base_salary, photo, is_blocked, permissions 
+          FROM public.users 
           ORDER BY id ASC
         `),
-        pool.query('SELECT user_id, dim, lun, mar, mer, jeu, ven, sam FROM public.user_schedules'),
+        pool.query('SELECT * FROM public.user_schedules'),
         fetchDayPunches(logicalDay),
-        pool.query('SELECT user_id, reason FROM public.retards WHERE date = $1', [dateSQL]),
-        pool.query('SELECT user_id, reason, type FROM public.absents WHERE date = $1', [dateSQL]),
-        pool.query(`
-          SELECT user_id, present, infraction, retard, clock_in, clock_out, remarque, updated
-          FROM public."${payrollTableName}"
-          WHERE date = $1
-        `, [dateSQL])
+        pool.query('SELECT user_id, reason FROM public.retards WHERE date::date = $1::date', [dateSQL]),
+        pool.query('SELECT user_id, reason, type FROM public.absents WHERE date::date = $1::date', [dateSQL]),
+        pool.query(`SELECT * FROM public."${payrollTableName}" WHERE date = $1`, [dateSQL])
       ]);
 
 
@@ -1707,7 +1730,7 @@ const resolvers = {
         punchesByUser.get(p.user_id).push(p);
       });
 
-      let results = users.map((user: any) => {
+      const results = users.map((user: any) => {
         // ... (rest of the map logic)
         const schedule = schedules.find((s: any) => s.user_id == user.id);
         const originalShiftType = schedule ? schedule[dayCol] : "Repos";
@@ -1898,14 +1921,6 @@ const resolvers = {
         };
       });
 
-      if (filter) {
-        const f = filter.toLowerCase();
-        results = results.filter((r: any) =>
-          r.user.username.toLowerCase().includes(f) ||
-          r.user.departement?.toLowerCase().includes(f)
-        );
-      }
-
       // Sorting: "always the last finger point is the first"
       results.sort((a: any, b: any) => {
         const timeA = a.lastPunch ? new Date(a.lastPunch).getTime() : 0;
@@ -1913,10 +1928,9 @@ const resolvers = {
         return timeB - timeA;
       });
 
-      // Cache results (60s for today, 10 min for past dates)
-      const cacheTTL = isToday ? 60000 : 600000;
+      // Cache results (30s for today, 5 min for past dates)
+      const cacheTTL = isToday ? 30000 : 300000;
       setCache(cacheKey, results, cacheTTL);
-      console.log(`[CACHE SET] personnelStatus cached for ${dateSQL} (TTL: ${cacheTTL}ms)`);
 
       return results;
     },
@@ -2801,23 +2815,6 @@ const resolvers = {
       await cleanOldNotifications();
       return true;
     },
-    payUser: async (_: any, { month, userId }: { month: string, userId: string }, context: any) => {
-      await initializePayrollTable(month);
-      const tableName = `paiecurrent_${month}`;
-
-      const userRes = await pool.query('SELECT username FROM public.users WHERE id = $1', [userId]);
-      if (userRes.rows.length === 0) throw new Error("User not found");
-      const { username } = userRes.rows[0];
-
-      await pool.query(
-        `UPDATE public."${tableName}" SET paid = TRUE WHERE user_id = $1`,
-        [userId]
-      );
-
-      await createNotification('system', "Salaire Payé", `Le salaire de ${username} pour le mois ${month} a été marqué comme payé.`, userId, context.userDone);
-      invalidateCache();
-      return true;
-    },
     pardonLate: async (_: any, { userId, date }: { userId: string, date: string }, context: any) => {
       const dateSQL = formatDateLocal(date);
       if (!dateSQL) throw new Error("Invalid date format");
@@ -2839,7 +2836,6 @@ const resolvers = {
       if (userRes.rows.length === 0) throw new Error("User not found");
       const { username, departement } = userRes.rows[0];
 
-      const isAbsent = record.present === 0;
       let targetClockIn = record.clock_in;
       let targetClockOut = record.clock_out;
 
@@ -2850,13 +2846,21 @@ const resolvers = {
 
         if (departement === 'Chef_Cuisine') {
           targetClockIn = "11:00";
-          if (isAbsent) targetClockOut = "22:00";
-        } else if (shiftType === "Soir") {
-          targetClockIn = "16:00";
-          if (isAbsent) targetClockOut = "00:00";
+          if (!targetClockOut) targetClockOut = "22:00";
         } else {
-          targetClockIn = "07:00";
-          if (isAbsent) targetClockOut = "16:00";
+          if (shiftType === "Soir") {
+            targetClockIn = "16:00";
+            if (!targetClockOut) targetClockOut = "23:00";
+          } else {
+            targetClockIn = "07:00";
+            if (!targetClockOut) targetClockOut = "16:00";
+          }
+        }
+
+        // Only override clock_out if user is already finished or if they specifically left early causing issues
+        // If Matin shift normally ends at 16:00
+        if (shiftType === "Matin" && targetClockOut && targetClockOut < "16:00") {
+          targetClockOut = "16:00";
         }
       }
 

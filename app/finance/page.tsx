@@ -90,10 +90,6 @@ export default function FinancePage() {
         let totalAbsenceCost = 0
 
         // Let's iterate users to be precise
-        const [y, m_val] = payrollMonthKey.split('_').map(Number)
-        const daysInMonth = new Date(y, m_val, 0).getDate()
-        const todayStr = format(new Date(), 'yyyy-MM-dd')
-
         users.forEach((user: any) => {
             const userRecords = records.filter((r: any) => String(r.user_id) === String(user.id))
 
@@ -105,33 +101,23 @@ export default function FinancePage() {
             totalInfractions += userRecords.reduce((sum: number, r: any) => sum + (r.infraction || 0), 0)
 
             // Calc Absence Cost
-            const dayValue = (user.base_salary || 0) / daysInMonth
-            const absCount = userRecords.filter((r: any) => r.date <= todayStr && r.present === 0).length
-            const passCount = userRecords.filter((r: any) => r.date <= todayStr).length
-            const wrkCount = userRecords.filter((r: any) => r.date <= todayStr && r.present === 1).length
-            const extraDaysCount = userRecords.filter((r: any) => (r.extra || 0) > 0).length
+            // Rule: Absence = present=0 AND date <= yesterday (to avoid future deductions)
+            const dayValue = (user.base_salary || 0) / 30
+            const yesterday = new Date()
+            yesterday.setDate(yesterday.getDate() - 1)
+            const yesterdayStr = format(yesterday, 'yyyy-MM-dd')
 
-            // Rule: logic matches payroll page
-            const paidDaysCount = absCount > 4 ? Math.max(0, wrkCount - extraDaysCount) : Math.max(0, passCount - extraDaysCount)
-            totalAbsenceCost += (passCount - extraDaysCount - paidDaysCount) * dayValue
+            const absentCount = userRecords.filter((r: any) => {
+                // formatted date in record is 'YYYY-MM-DD'
+                return r.date <= yesterdayStr && r.present === 0
+            }).length
+
+            totalAbsenceCost += (absentCount * dayValue)
         })
 
         // Total Net Flow
-        // Net = sum(paidDays * dayValue - avance - infraction)
-        const totalNetToPay = users.reduce((acc: number, user: any) => {
-            const userRecords = records.filter((r: any) => String(r.user_id) === String(user.id))
-            const dayValue = (user.base_salary || 0) / daysInMonth
-            const abs = userRecords.filter((r: any) => r.date <= todayStr && r.present === 0).length
-            const pass = userRecords.filter((r: any) => r.date <= todayStr).length
-            const wrk = userRecords.filter((r: any) => r.date <= todayStr && r.present === 1).length
-            const extraDays = userRecords.filter((r: any) => (r.extra || 0) > 0).length
-
-            const pd = abs > 4 ? Math.max(0, wrk - extraDays) : Math.max(0, pass - extraDays)
-            const av = userRecords.reduce((s: number, r: any) => s + (r.acompte || 0), 0)
-            const inf = userRecords.reduce((s: number, r: any) => s + (r.infraction || 0), 0)
-
-            return acc + (pd * dayValue - av - inf)
-        }, 0)
+        // Net = Base + Prime + Extra + Doublage - Avance - Infraction - AbsenceCost
+        const totalNetToPay = totalBaseSalary + totalPrimes + totalExtras + totalDoublage - totalAvances - totalInfractions - totalAbsenceCost
 
         return {
             totalBaseSalary,
@@ -151,33 +137,34 @@ export default function FinancePage() {
         const records = data?.getPayroll || []
         const depts: Record<string, number> = {}
 
-        const [y, m_val] = payrollMonthKey.split('_').map(Number)
-        const daysInMonth = new Date(y, m_val, 0).getDate()
-
         users.forEach((user: any) => {
             const dept = user.departement || "Autre"
             if (!depts[dept]) depts[dept] = 0
 
             // Calculate Net for user
             const userRecords = records.filter((r: any) => String(r.user_id) === String(user.id))
-            const dayValue = (user.base_salary || 0) / daysInMonth
-            const today = new Date()
-            const todayStr = format(today, 'yyyy-MM-dd')
+            const dayValue = (user.base_salary || 0) / 30
+            const yesterday = new Date()
+            yesterday.setDate(yesterday.getDate() - 1)
+            const yesterdayStr = format(yesterday, 'yyyy-MM-dd')
 
-            const abs = userRecords.filter((r: any) => r.date <= todayStr && r.present === 0).length
-            const pass = userRecords.filter((r: any) => r.date <= todayStr).length
-            const wrk = userRecords.filter((r: any) => r.date <= todayStr && r.present === 1).length
-            const extraDays = userRecords.filter((r: any) => (r.extra || 0) > 0).length
+            const absentCount = userRecords.filter((r: any) => {
+                return r.date <= yesterdayStr && r.present === 0
+            }).length
 
-            const pd = abs > 4 ? Math.max(0, wrk - extraDays) : Math.max(0, pass - extraDays)
-            const av = userRecords.reduce((s: number, r: any) => s + (r.acompte || 0), 0)
-            const inf = userRecords.reduce((s: number, r: any) => s + (r.infraction || 0), 0)
+            const primes = userRecords.reduce((s: number, r: any) => s + (r.prime || 0), 0)
+            const extras = userRecords.reduce((s: number, r: any) => s + (r.extra || 0), 0)
+            const doublages = userRecords.reduce((s: number, r: any) => s + (r.doublage || 0), 0)
+            const avances = userRecords.reduce((s: number, r: any) => s + (r.acompte || 0), 0)
+            const infractions = userRecords.reduce((s: number, r: any) => s + (r.infraction || 0), 0)
 
-            depts[dept] += (pd * dayValue - av - inf)
+            const net = (user.base_salary || 0) + primes + extras + doublages - avances - infractions - (absentCount * dayValue)
+
+            depts[dept] += net
         })
 
         return Object.entries(depts).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value)
-    }, [data, selectedMonth])
+    }, [data])
 
 
     return (
@@ -215,130 +202,113 @@ export default function FinancePage() {
 
                     {/* Top Cards Row */}
                     <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-                        <Card className="p-6 bg-white border-[#c9b896] shadow-sm relative overflow-hidden group hover:shadow-md transition-shadow">
-                            <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:scale-110 transition-transform">
-                                <DollarSign className="h-12 w-12 text-[#8b5a2b]" />
+                        <Card className="border-[#c9b896] bg-white p-6 shadow-md">
+                            <div className="flex justify-between items-center">
+                                <div>
+                                    <p className="text-xs font-bold text-[#6b5744] uppercase tracking-wider mb-1">Masse Salariale Base</p>
+                                    <p className="text-3xl font-black text-[#3d2c1e]">{Math.round(metrics.totalBaseSalary)} <span className="text-lg text-[#6b5744]">DT</span></p>
+                                </div>
+                                <div className="p-3 bg-[#8b5a2b]/10 rounded-full">
+                                    <DollarSign className="h-6 w-6 text-[#8b5a2b]" />
+                                </div>
                             </div>
-                            <div className="relative z-10">
-                                <p className="text-sm font-medium text-[#6b5744] uppercase tracking-wider">Masse Salariale Base</p>
-                                <h3 className="text-3xl font-bold text-[#3d2c1e] mt-2">
-                                    {Math.round(metrics.totalBaseSalary).toLocaleString()} <span className="text-lg font-normal text-[#6b5744]">DT</span>
-                                </h3>
-                                <p className="text-xs text-[#6b5744] mt-2 flex items-center gap-1">
-                                    <BarChart className="h-3 w-3" /> Total des salaires de base
-                                </p>
-                            </div>
+                            <p className="text-[10px] text-[#6b5744]/70 mt-2 font-medium">Cumul des salaires de base (sans primes/déductions)</p>
                         </Card>
 
-                        <Card className="p-6 bg-white border-[#c9b896] shadow-sm relative overflow-hidden group hover:shadow-md transition-shadow">
-                            <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:scale-110 transition-transform">
-                                <TrendingUp className="h-12 w-12 text-emerald-600" />
-                            </div>
+                        <Card className="border-[#c9b896] bg-gradient-to-br from-[#8b5a2b] to-[#6b4423] text-white p-6 shadow-md relative overflow-hidden">
                             <div className="relative z-10">
-                                <p className="text-sm font-medium text-[#6b5744] uppercase tracking-wider">Primes & Extras</p>
-                                <h3 className="text-3xl font-bold text-emerald-600 mt-2">
-                                    +{Math.round(metrics.totalPrimes + metrics.totalExtras + metrics.totalDoublage).toLocaleString()} <span className="text-lg font-normal">DT</span>
-                                </h3>
-                                <p className="text-xs text-emerald-600 mt-2 flex items-center gap-1 font-medium">
-                                    Dont {Math.round(metrics.totalPrimes)} DT Primes
-                                </p>
+                                <p className="text-xs font-bold text-white/80 uppercase tracking-wider mb-1">Net à Payer Global</p>
+                                <p className="text-4xl font-black">{Math.round(metrics.totalNetToPay)} <span className="text-xl opacity-80">DT</span></p>
                             </div>
+                            <div className="absolute right-[-10px] bottom-[-10px] opacity-10 rotate-12">
+                                <Wallet className="h-32 w-32" />
+                            </div>
+                            <p className="relative z-10 text-[10px] text-white/60 mt-2 font-medium">Estimation finale après calculs</p>
                         </Card>
 
-                        <Card className="p-6 bg-white border-[#c9b896] shadow-sm relative overflow-hidden group hover:shadow-md transition-shadow">
-                            <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:scale-110 transition-transform">
-                                <TrendingDown className="h-12 w-12 text-red-600" />
+                        <Card className="border-[#c9b896] bg-white p-6 shadow-md">
+                            <div className="flex justify-between items-center">
+                                <div>
+                                    <p className="text-xs font-bold text-[#6b5744] uppercase tracking-wider mb-1">Total Avances</p>
+                                    <p className="text-3xl font-black text-amber-600">{Math.round(metrics.totalAvances)} <span className="text-lg text-amber-600/70">DT</span></p>
+                                </div>
+                                <div className="p-3 bg-amber-50 rounded-full">
+                                    <TrendingUp className="h-6 w-6 text-amber-600" />
+                                </div>
                             </div>
-                            <div className="relative z-10">
-                                <p className="text-sm font-medium text-[#6b5744] uppercase tracking-wider">Retenues & Avances</p>
-                                <h3 className="text-3xl font-bold text-red-600 mt-2">
-                                    -{Math.round(metrics.totalAvances + metrics.totalInfractions + metrics.totalAbsenceCost).toLocaleString()} <span className="text-lg font-normal">DT</span>
-                                </h3>
-                                <p className="text-xs text-red-600 mt-2 flex items-center gap-1 font-medium">
-                                    Dont {Math.round(metrics.totalAbsenceCost)} DT Coût Absences
-                                </p>
-                            </div>
+                            <p className="text-[10px] text-[#6b5744]/70 mt-2 font-medium">Somme déjà versée aux employés</p>
                         </Card>
                     </div>
 
-                    {/* Middle Section */}
-                    <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
-                        {/* Summary Checklist */}
-                        <Card className="p-6 sm:p-8 bg-white border-[#c9b896] shadow-md border-t-4 border-t-[#8b5a2b]">
+                    {/* Detailed Stats Cards */}
+                    <div className="grid gap-6 grid-cols-2 lg:grid-cols-4">
+                        <Card className="border-[#c9b896] bg-white p-5 shadow-sm hover:shadow-md transition-shadow">
+                            <p className="text-[10px] font-bold text-[#6b5744] uppercase tracking-wider mb-2">Total Doublages</p>
+                            <p className="text-2xl font-bold text-cyan-600">+{Math.round(metrics.totalDoublage)} DT</p>
+                        </Card>
+                        <Card className="border-[#c9b896] bg-white p-5 shadow-sm hover:shadow-md transition-shadow">
+                            <p className="text-[10px] font-bold text-[#6b5744] uppercase tracking-wider mb-2">Total Extras</p>
+                            <p className="text-2xl font-bold text-emerald-600">+{Math.round(metrics.totalExtras)} DT</p>
+                        </Card>
+                        <Card className="border-[#c9b896] bg-white p-5 shadow-sm hover:shadow-md transition-shadow">
+                            <p className="text-[10px] font-bold text-[#6b5744] uppercase tracking-wider mb-2">Total Primes</p>
+                            <p className="text-2xl font-bold text-emerald-600">+{Math.round(metrics.totalPrimes)} DT</p>
+                        </Card>
+                        <Card className="border-[#c9b896] bg-white p-5 shadow-sm hover:shadow-md transition-shadow">
+                            <p className="text-[10px] font-bold text-[#6b5744] uppercase tracking-wider mb-2">Total Retenues</p>
+                            <p className="text-2xl font-bold text-red-600">-{Math.round(metrics.totalInfractions + metrics.totalAbsenceCost)} DT</p>
+                        </Card>
+                    </div>
+
+                    {/* Analysis Row */}
+                    <div className="grid gap-6 grid-cols-1 md:grid-cols-2">
+                        <Card className="border-[#c9b896] bg-white p-6 shadow-md">
                             <div className="flex items-center gap-3 mb-6">
-                                <div className="h-10 w-10 rounded-xl bg-[#f8f6f1] flex items-center justify-center text-[#8b5a2b]">
-                                    <ClipboardList className="h-6 w-6" />
-                                </div>
-                                <h3 className="text-xl font-bold text-[#3d2c1e]">Rapport de Paie</h3>
+                                <div className="p-2 bg-blue-100 rounded-lg"><PieChart className="h-6 w-6 text-blue-600" /></div>
+                                <h3 className="text-xl font-bold text-[#3d2c1e]">Coût Net par Département</h3>
+                            </div>
+
+                            <div className="space-y-3">
+                                {deptStats.map((dept, idx) => (
+                                    <div key={idx} className="bg-[#f8f6f1] p-3 rounded-lg border border-[#c9b896]/50 flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <span className="w-6 h-6 rounded-full bg-[#8b5a2b] text-white flex items-center justify-center text-xs font-bold mr-3">{idx + 1}</span>
+                                            <span className="font-medium text-[#3d2c1e]">{dept.name}</span>
+                                        </div>
+                                        <span className="font-bold text-[#3d2c1e]">{Math.round(dept.value)} DT</span>
+                                    </div>
+                                ))}
+                                {deptStats.length === 0 && <p className="text-center text-[#6b5744] py-4">Aucune donnée disponible.</p>}
+                            </div>
+                        </Card>
+
+                        <Card className="border-[#c9b896] bg-white p-6 shadow-md">
+                            <div className="flex items-center gap-3 mb-6">
+                                <div className="p-2 bg-red-100 rounded-lg"><TrendingDown className="h-6 w-6 text-red-600" /></div>
+                                <h3 className="text-xl font-bold text-[#3d2c1e]">Détail des Retenues</h3>
                             </div>
 
                             <div className="space-y-4">
-                                <div className="flex items-center justify-between p-3 rounded-lg bg-[#f8f6f1]/50 border border-[#c9b896]/20">
-                                    <span className="text-[#6b5744]">Total Avances</span>
-                                    <span className="font-bold text-[#3d2c1e]">{Math.round(metrics.totalAvances)} DT</span>
+                                <div className="flex justify-between items-center p-3 bg-red-50 rounded-lg border border-red-100">
+                                    <span className="text-red-800 font-medium text-sm">Coût des Absences</span>
+                                    <span className="text-red-700 font-bold text-lg">-{Math.round(metrics.totalAbsenceCost)} DT</span>
                                 </div>
-                                <div className="flex items-center justify-between p-3 rounded-lg bg-[#f8f6f1]/50 border border-[#c9b896]/20">
-                                    <span className="text-[#6b5744]">Total Primes</span>
-                                    <span className="font-bold text-emerald-600">+{Math.round(metrics.totalPrimes)} DT</span>
-                                </div>
-                                <div className="flex items-center justify-between p-3 rounded-lg bg-[#f8f6f1]/50 border border-[#c9b896]/20">
-                                    <span className="text-[#6b5744]">Total Extras</span>
-                                    <span className="font-bold text-emerald-600">+{Math.round(metrics.totalExtras)} DT</span>
-                                </div>
-                                <div className="flex items-center justify-between p-3 rounded-lg bg-[#f8f6f1]/50 border border-[#c9b896]/20">
-                                    <span className="text-[#6b5744]">Total Retenues Infractions</span>
-                                    <span className="font-bold text-red-600">-{Math.round(metrics.totalInfractions)} DT</span>
-                                </div>
-                                <div className="flex items-center justify-between p-3 rounded-lg bg-[#f8f6f1]/50 border border-[#c9b896]/20">
-                                    <span className="p-0 flex flex-col">
-                                        <span className="text-[#6b5744]">Total Coût Absences</span>
-                                        <span className="text-[10px] text-[#8b5a2b]">Règle: &gt;4 absents = déduction brute</span>
-                                    </span>
-                                    <span className="font-bold text-red-600">-{Math.round(metrics.totalAbsenceCost)} DT</span>
-                                </div>
-
-                                <div className="pt-4 mt-2 border-t border-[#c9b896]">
-                                    <div className="flex items-center justify-between bg-[#3d2c1e] text-white p-4 rounded-xl shadow-lg">
-                                        <div className="flex items-center gap-3">
-                                            <Wallet className="h-6 w-6" />
-                                            <span className="font-medium uppercase tracking-wider text-sm">Net à Payer (Total)</span>
-                                        </div>
-                                        <span className="text-2xl font-black">{Math.round(metrics.totalNetToPay).toLocaleString()} DT</span>
+                                <div className="flex justify-between items-center p-3 bg-amber-50 rounded-lg border border-amber-100">
+                                    <div className="flex flex-col">
+                                        <span className="text-amber-800 font-medium text-sm">Retenues & Pénalités</span>
+                                        <span className="text-xs text-amber-600">Infractions, Retards, etc.</span>
                                     </div>
+                                    <span className="text-amber-700 font-bold text-lg">-{Math.round(metrics.totalInfractions)} DT</span>
                                 </div>
                             </div>
-                        </Card>
 
-                        {/* Department Distribution */}
-                        <Card className="p-6 sm:p-8 bg-white border-[#c9b896] shadow-md border-t-4 border-t-[#8b5a2b]">
-                            <div className="flex items-center gap-3 mb-6">
-                                <div className="h-10 w-10 rounded-xl bg-[#f8f6f1] flex items-center justify-center text-[#8b5a2b]">
-                                    <PieChart className="h-6 w-6" />
-                                </div>
-                                <h3 className="text-xl font-bold text-[#3d2c1e]">Dépenses par Département</h3>
-                            </div>
-                            <div className="space-y-6">
-                                {deptStats.map((dept: any) => (
-                                    <div key={dept.name} className="relative">
-                                        <div className="flex justify-between mb-2 items-end">
-                                            <span className="font-semibold text-[#3d2c1e]">{dept.name}</span>
-                                            <span className="text-[#8b5a2b] font-bold">{Math.round(dept.value).toLocaleString()} DT</span>
-                                        </div>
-                                        <div className="h-3 w-full bg-[#f8f6f1] rounded-full overflow-hidden border border-[#c9b896]/30">
-                                            <div
-                                                className="h-full bg-gradient-to-r from-[#8b5a2b] to-[#c9b896] rounded-full transition-all duration-1000"
-                                                style={{ width: `${(dept.value / metrics.totalNetToPay) * 100}%` }}
-                                            />
-                                        </div>
-                                        <p className="text-[10px] text-[#6b5744] mt-1 text-right italic font-medium">
-                                            {((dept.value / metrics.totalNetToPay) * 100).toFixed(1)}% de la masse salariale nette
-                                        </p>
-                                    </div>
-                                ))}
+                            <div className="mt-6 pt-4 border-t border-[#c9b896]/30">
+                                <p className="text-center text-xs text-[#6b5744]">
+                                    L'optimisation des absences pourrait économiser <span className="font-bold text-[#8b5a2b]">{Math.round(metrics.totalAbsenceCost)} DT</span> ce mois-ci.
+                                </p>
                             </div>
                         </Card>
                     </div>
-
                 </div>
             </main>
         </div>
