@@ -24,11 +24,22 @@ const createApolloClient = () => {
         }
     });
 
-    const httpLink = new BatchHttpLink({
-        uri: "/api/graphql",
-        batchInterval: 50, // Increased from 20ms to 50ms to batch more requests
-        batchMax: 10, // Maximum of 10 queries per batch
-    });
+    const getUri = () => {
+        if (typeof window !== "undefined") return "/api/graphql";
+        // On server, we need absolute URL. Default to localhost for dev.
+        return (process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000") + "/api/graphql";
+    };
+
+    const httpLink = new ApolloLink((operation, forward) => {
+        // Fallback to regular Fetch if Batching is not needed or causing issues
+        const uri = getUri();
+        operation.setContext({ uri });
+        return forward(operation);
+    }).concat(new BatchHttpLink({
+        uri: typeof window !== "undefined" ? "/api/graphql" : "http://localhost:3000/api/graphql",
+        batchInterval: 50,
+        batchMax: 10,
+    }));
 
     return new ApolloClient({
         link: authLink.concat(httpLink),
