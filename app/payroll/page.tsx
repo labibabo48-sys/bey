@@ -911,7 +911,7 @@ export default function PayrollPage() {
                 className="border-[#c9b896] bg-white p-4 shadow-md cursor-pointer hover:bg-[#f8f6f1] transition-colors"
                 onClick={() => setViewPrimesOpen(true)}
               >
-                <p className="text-sm text-[#6b5744]">Total Primes</p>
+                <p className="text-sm text-[#6b5744]">Total Primes {selectedDepartment !== "all" ? `(${selectedDepartment})` : (searchTerm ? "(Filtré)" : "")}</p>
                 <p className="text-2xl font-bold text-amber-600">{Math.round(globalStats.totalPrimes)} DT</p>
               </Card>
             )}
@@ -920,7 +920,7 @@ export default function PayrollPage() {
                 className="border-[#c9b896] bg-white p-4 shadow-md cursor-pointer hover:bg-[#f8f6f1] transition-colors"
                 onClick={() => setViewExtrasOpen(true)}
               >
-                <p className="text-sm text-[#6b5744]">Total Extras</p>
+                <p className="text-sm text-[#6b5744]">Total Extras {selectedDepartment !== "all" ? `(${selectedDepartment})` : (searchTerm ? "(Filtré)" : "")}</p>
                 <p className="text-2xl font-bold text-emerald-600">{Math.round(globalStats.totalExtras)} DT</p>
               </Card>
             )}
@@ -929,7 +929,7 @@ export default function PayrollPage() {
                 className="border-[#c9b896] bg-white p-4 shadow-md cursor-pointer hover:bg-[#f8f6f1] transition-colors"
                 onClick={() => setViewDoublagesOpen(true)}
               >
-                <p className="text-sm text-[#6b5744]">Total Doublages</p>
+                <p className="text-sm text-[#6b5744]">Total Doublages {selectedDepartment !== "all" ? `(${selectedDepartment})` : (searchTerm ? "(Filtré)" : "")}</p>
                 <p className="text-2xl font-bold text-cyan-600">{Math.round(globalStats.totalDoublages)} DT</p>
               </Card>
             )}

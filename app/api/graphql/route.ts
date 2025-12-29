@@ -268,17 +268,47 @@ const typeDefs = `#graphql
 `;
 
 // Helper to format timestamps to HH:mm
-const formatTime = (dateStr: string) => {
-  if (!dateStr) return null;
-  // If it's a raw ZK string like "2025-12-29 07:15:00", just take the HH:mm
-  if (typeof dateStr === 'string' && dateStr.match(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)) {
-    return dateStr.substring(11, 16);
+const formatTime = (dateValue: any) => {
+  if (!dateValue) return null;
+
+  // If it's a Date object, use its components directly to avoid TZ shifts
+  // Machine timestamps are intended to be wall-clock local time
+  if (dateValue instanceof Date) {
+    const h = String(dateValue.getHours()).padStart(2, '0');
+    const m = String(dateValue.getMinutes()).padStart(2, '0');
+    return `${h}:${m}`;
   }
+
+  const str = String(dateValue);
+  // If it's a raw machine string like "2025-12-29 07:15:00", just take the HH:mm
+  if (str.match(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)) {
+    return str.substring(11, 16);
+  }
+
+  // Already HH:mm
+  if (str.match(/^\d{2}:\d{2}$/)) {
+    return str;
+  }
+
   try {
-    const date = new Date(dateStr);
-    if (isNaN(date.getTime())) return null;
-    return date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Africa/Tunis' });
-  } catch (e) { return dateStr; }
+    const date = new Date(str);
+    if (isNaN(date.getTime())) return str;
+
+    // For ISO strings (like .toISOString()), we WANT the shift to Tunis
+    if (str.includes('T') || str.includes('Z')) {
+      return date.toLocaleTimeString('fr-FR', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+        timeZone: 'Africa/Tunis'
+      });
+    }
+
+    // Default: use local components to avoid extra shift if it's already local
+    const h = String(date.getHours()).padStart(2, '0');
+    const m = String(date.getMinutes()).padStart(2, '0');
+    return `${h}:${m}`;
+  } catch (e) { return str; }
 };
 
 const formatDuration = (mins: number) => {
@@ -411,11 +441,28 @@ const formatDateTimeLocal = (dateInput: Date | string) => {
   return `${year}-${month}-${day}T${hours}:${mins}`;
 };
 
+// Helper to normalize machine timestamps to Tunis (+01:00) context
+const parseMachineDate = (v: any) => {
+  if (!v) return new Date();
+  if (v instanceof Date) {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    // Re-construct as an ISO string with +01:00 timezone
+    const s = `${v.getFullYear()}-${pad(v.getMonth() + 1)}-${pad(v.getDate())}T${pad(v.getHours())}:${pad(v.getMinutes())}:${pad(v.getSeconds())}.000+01:00`;
+    return new Date(s);
+  }
+  if (typeof v === 'string') {
+    if (v.match(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)) {
+      return new Date(v.replace(" ", "T") + ".000+01:00");
+    }
+    return new Date(v);
+  }
+  return new Date(v);
+};
+
 // Helper to determine shift
 // Helper to get hour in Tunisia timezone (UTC+1)
 const getTunisiaHour = (date: Date): number => {
-  const tunisiaTime = new Date(date.toLocaleString('en-US', { timeZone: 'Africa/Tunis' }));
-  return tunisiaTime.getHours();
+  return parseInt(date.toLocaleTimeString('fr-FR', { hour: '2-digit', hour12: false, timeZone: 'Africa/Tunis' }));
 };
 
 const determineShift = (first: Date, last: Date | null, isOngoing: boolean) => {
@@ -1776,13 +1823,13 @@ const resolvers = {
         if (userPunches.length > 0) {
           // Override Repos for calculation
           if (shiftType === "Repos") shiftType = "Matin";
-          const firstDate = new Date(userPunches[0].device_time);
+          const firstDate = parseMachineDate(userPunches[0].device_time);
           clockIn = formatTime(userPunches[0].device_time);
 
           if (userPunches.length > 1) {
-            clockOut = formatTime(userPunches[userPunches.length - 1].device_time);
+            clockOut = formatTime(userPunches[userPunches.length - 1].clock_out || userPunches[userPunches.length - 1].device_time);
           }
-          const lastDate = userPunches.length > 1 ? new Date(userPunches[userPunches.length - 1].device_time) : null;
+          const lastDate = userPunches.length > 1 ? parseMachineDate(userPunches[userPunches.length - 1].device_time) : null;
           const isOngoing = userPunches.length % 2 !== 0;
           shift = determineShift(firstDate, lastDate, isOngoing);
         }
@@ -1803,7 +1850,7 @@ const resolvers = {
           let startHour = (sTypeUpper === "SOIR") ? 16 : 7;
 
           const shiftStartTime = new Date(`${dateSQL}T${String(startHour).padStart(2, "0")}:00:00.000+01:00`);
-          const firstD = new Date(typeof userPunches[0].device_time === 'string' ? userPunches[0].device_time.replace(" ", "T") + "+01:00" : userPunches[0].device_time);
+          const firstD = parseMachineDate(userPunches[0].device_time);
           if (firstD > shiftStartTime) {
             const diffMins = Math.floor((firstD.getTime() - shiftStartTime.getTime()) / 60000);
             if (diffMins > 0) {
