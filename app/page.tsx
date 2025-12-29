@@ -24,6 +24,7 @@ const GET_PERSONNEL_STATUS = gql`
         role
         departement
         base_salary
+        photo
         is_blocked
       }
       clockIn
