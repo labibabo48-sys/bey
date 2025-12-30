@@ -384,34 +384,39 @@ const formatDateLocal = (dateInput: Date | string) => {
 };
 
 // Internal helper to ensure notifications table exists
-let notificationsTableCreated = false;
+let notificationsInitPromise: Promise<void> | null = null;
 const ensureNotificationsTable = async () => {
-  if (notificationsTableCreated) return;
-  try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS public.notifications (
-        id SERIAL PRIMARY KEY,
-        type VARCHAR(50) NOT NULL,
-        title VARCHAR(255) NOT NULL,
-        message TEXT NOT NULL,
-        read BOOLEAN DEFAULT FALSE,
-        user_id INT,
-        user_done VARCHAR(255),
-        url TEXT
-      )
-    `);
-    // Ensure columns exist
+  if (notificationsInitPromise) return notificationsInitPromise;
+
+  notificationsInitPromise = (async () => {
     try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS public.notifications (
+          id SERIAL PRIMARY KEY,
+          type VARCHAR(50) NOT NULL,
+          title VARCHAR(255) NOT NULL,
+          message TEXT NOT NULL,
+          timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          read BOOLEAN DEFAULT FALSE,
+          user_id INT,
+          user_done VARCHAR(255),
+          url TEXT
+        )
+      `);
+      // Ensure columns exist (sequential to save connections)
       await pool.query('ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS user_done VARCHAR(255)');
       await pool.query('ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS url TEXT');
-    } catch (e) { }
-    // Performance indexes
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON public.notifications(user_id)`);
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_timestamp ON public.notifications(timestamp DESC)`);
-    notificationsTableCreated = true;
-  } catch (e) {
-    console.error("Table Creation Error:", e);
-  }
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON public.notifications(user_id)`);
+      if (!(await pool.query("SELECT 1 FROM pg_indexes WHERE indexname = 'idx_notifications_timestamp'")).rowCount) {
+        try { await pool.query(`CREATE INDEX idx_notifications_timestamp ON public.notifications(timestamp DESC)`); } catch (e) { }
+      }
+    } catch (e) {
+      console.error("Notifications Table Creation Error:", e);
+      notificationsInitPromise = null; // Allow retry on failure
+    }
+  })();
+
+  return notificationsInitPromise;
 };
 
 // Internal helper to create notifications
@@ -541,40 +546,50 @@ const ensureTableIndexes = async (tableName: string) => {
   } catch (e) { /* ignore if table doesn't exist yet */ }
 };
 
-// Global index setup for static tables
+let staticIndexesPromise: Promise<void> | null = null;
 const ensureStaticIndexes = async () => {
-  try {
-    const queries = [
-      `CREATE INDEX IF NOT EXISTS idx_users_username ON public.users(username)`,
-      `CREATE INDEX IF NOT EXISTS idx_users_departement ON public.users("département")`,
-      `CREATE INDEX IF NOT EXISTS idx_user_schedules_user_id ON public.user_schedules(user_id)`,
-      `CREATE INDEX IF NOT EXISTS idx_avances_user_id_date ON public.avances(user_id, date)`,
-      `CREATE INDEX IF NOT EXISTS idx_retards_user_id_date ON public.retards(user_id, date)`,
-      `CREATE INDEX IF NOT EXISTS idx_absents_user_id_date ON public.absents(user_id, date)`,
-      `CREATE INDEX IF NOT EXISTS idx_extras_user_id_date ON public.extras(user_id, date_extra)`,
-      `CREATE INDEX IF NOT EXISTS idx_doublages_user_id_date ON public.doublages(user_id, date)`,
-      `CREATE INDEX IF NOT EXISTS idx_avances_date ON public.avances(date)`,
-      `CREATE INDEX IF NOT EXISTS idx_retards_date ON public.retards(date)`,
-      `CREATE INDEX IF NOT EXISTS idx_absents_date ON public.absents(date)`,
-      `CREATE INDEX IF NOT EXISTS idx_extras_date_extra ON public.extras(date_extra)`,
-      `CREATE INDEX IF NOT EXISTS idx_doublages_date ON public.doublages(date)`,
-      `ALTER TABLE public.extras ADD COLUMN IF NOT EXISTS motif TEXT`,
-      `CREATE INDEX IF NOT EXISTS idx_extras_motif ON public.extras(motif)`,
-      `CREATE TABLE IF NOT EXISTS public.doublages(
-        id SERIAL PRIMARY KEY,
-        user_id INT,
-        username VARCHAR(100),
-        montant FLOAT,
-        date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )`,
-      `CREATE INDEX IF NOT EXISTS idx_doublages_user_id_date ON public.doublages(user_id, date)`,
-      `CREATE INDEX IF NOT EXISTS idx_doublages_date ON public.doublages(date)`
-    ];
-    await Promise.all(queries.map(q => pool.query(q)));
-  } catch (e) { console.error("Index creation error:", e); }
+  if (staticIndexesPromise) return staticIndexesPromise;
+
+  staticIndexesPromise = (async () => {
+    try {
+      const queries = [
+        `CREATE INDEX IF NOT EXISTS idx_users_username ON public.users(username)`,
+        `CREATE INDEX IF NOT EXISTS idx_users_departement ON public.users("département")`,
+        `CREATE INDEX IF NOT EXISTS idx_user_schedules_user_id ON public.user_schedules(user_id)`,
+        `CREATE INDEX IF NOT EXISTS idx_avances_user_id_date ON public.avances(user_id, date)`,
+        `CREATE INDEX IF NOT EXISTS idx_retards_user_id_date ON public.retards(user_id, date)`,
+        `CREATE INDEX IF NOT EXISTS idx_absents_user_id_date ON public.absents(user_id, date)`,
+        `CREATE INDEX IF NOT EXISTS idx_extras_user_id_date ON public.extras(user_id, date_extra)`,
+        `CREATE INDEX IF NOT EXISTS idx_doublages_user_id_date ON public.doublages(user_id, date)`,
+        `CREATE INDEX IF NOT EXISTS idx_avances_date ON public.avances(date)`,
+        `CREATE INDEX IF NOT EXISTS idx_retards_date ON public.retards(date)`,
+        `CREATE INDEX IF NOT EXISTS idx_absents_date ON public.absents(date)`,
+        `CREATE INDEX IF NOT EXISTS idx_extras_date_extra ON public.extras(date_extra)`,
+        `CREATE INDEX IF NOT EXISTS idx_doublages_date ON public.doublages(date)`,
+        `ALTER TABLE public.extras ADD COLUMN IF NOT EXISTS motif TEXT`,
+        `CREATE INDEX IF NOT EXISTS idx_extras_motif ON public.extras(motif)`,
+        `CREATE TABLE IF NOT EXISTS public.doublages(
+          id SERIAL PRIMARY KEY,
+          user_id INT,
+          username VARCHAR(100),
+          montant FLOAT,
+          date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_doublages_user_id_date_v2 ON public.doublages(user_id, date)`,
+        `CREATE INDEX IF NOT EXISTS idx_doublages_date_v2 ON public.doublages(date)`
+      ];
+      // Run sequentially to avoid connection spike
+      for (const q of queries) {
+        try { await pool.query(q); } catch (e) { }
+      }
+    } catch (e) {
+      console.error("Index creation error:", e);
+      staticIndexesPromise = null;
+    }
+  })();
+
+  return staticIndexesPromise;
 };
-// Run once on module load (lazy)
-ensureStaticIndexes();
 
 const fetchDayPunches = async (logicalDate: Date, userId: string | null = null) => {
   // Construct table names
@@ -1865,7 +1880,11 @@ const resolvers = {
 
       const monthKey = dateSQL.substring(0, 7).replace('-', '_');
       const payrollTableName = `paiecurrent_${monthKey}`;
-      await initializePayrollTable(monthKey);
+      await Promise.all([
+        initializePayrollTable(monthKey),
+        ensureStaticIndexes(),
+        ensureNotificationsTable()
+      ]);
 
       // Parallelize Fetching with optimized index-friendly queries
       const nextDateSQL = formatDateLocal(new Date(logicalDay.getTime() + 86400000));

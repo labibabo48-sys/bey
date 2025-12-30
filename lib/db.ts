@@ -15,14 +15,14 @@ const isProd = process.env.NODE_ENV === 'production';
 const poolConfig = {
     connectionString: process.env.DATABASE_URL,
     // Keep max connections low per instance to allow multiple developers/users
-    // (Total server limit is 50, so Max 10 per dev instance is safer)
-    max: isProd ? 30 : 10,
+    // (Total server limit is 50, so Max 4 per dev instance is much safer)
+    max: isProd ? 30 : 4,
     // Release idle connections very quickly to free up slots for other users
     idleTimeoutMillis: 2000,
     // Faster timeout if connection cannot be established
     connectionTimeoutMillis: 5000,
-    // Ensure we don't hold the connection forever
-    maxUses: 5000,
+    // Recycle connections faster to be safe
+    maxUses: 1000,
 };
 
 // Singleton initialization
