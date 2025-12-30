@@ -23,6 +23,7 @@ const LOGIN_QUERY = gql`
         role
         email
         permissions
+        photo
       }
     }
   }
@@ -51,7 +52,8 @@ export default function LoginPage() {
           department: backendUser.role === 'admin' ? "Direction" : "Service",
           salary: 0,
           status: "IN",
-          permissions: backendUser.permissions
+          permissions: backendUser.permissions,
+          avatar: backendUser.photo
         };
 
         setCurrentUser(appUser);

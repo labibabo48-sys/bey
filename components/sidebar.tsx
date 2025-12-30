@@ -148,7 +148,19 @@ export function Sidebar() {
         {/* User Profile Card */}
         <div className="border-b border-[#e8e0d5]/50 p-8 lg:p-10">
           <div className="flex items-center gap-5">
-            <div className="h-16 w-16 lg:h-20 lg:w-20 flex-shrink-0 rounded-full bg-gradient-to-br from-[#8b5a2b] to-[#a0522d] shadow-md" />
+            <div className="h-16 w-16 lg:h-20 lg:w-20 flex-shrink-0 rounded-full bg-gradient-to-br from-[#8b5a2b] to-[#a0522d] shadow-md flex items-center justify-center overflow-hidden border-2 border-white">
+              {user.avatar ? (
+                <img
+                  src={user.avatar}
+                  alt={user.name}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <span className="text-xl lg:text-2xl font-bold text-white uppercase">
+                  {user.name ? user.name.charAt(0) : "U"}
+                </span>
+              )}
+            </div>
             <div className="min-w-0 flex-1">
               <p className="truncate text-base lg:text-lg font-semibold text-[#3d2c1e]">{user.name}</p>
               <p className="text-sm lg:text-base text-[#8b5a2b] font-medium">
