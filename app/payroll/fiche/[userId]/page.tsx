@@ -446,10 +446,10 @@ export default function UserFichePage() {
                                 <ChevronLeft className="h-6 w-6" />
                             </Button>
                             <div>
-                                <h1 className="font-[family-name:var(--font-heading)] text-2xl sm:text-3xl font-bold text-[#8b5a2b] flex items-center gap-3">
+                                <h1 className="font-[family-name:var(--font-heading)] text-xl sm:text-3xl font-bold text-[#8b5a2b] flex flex-wrap items-center gap-2 sm:gap-3">
                                     Fiche de Paie — {user.username}
                                     {stats.isPaid && (
-                                        <span className="text-xs bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full border border-emerald-200 uppercase font-black tracking-widest animate-pulse">
+                                        <span className="text-[10px] sm:text-xs bg-emerald-100 text-emerald-700 px-2 sm:px-3 py-1 rounded-full border border-emerald-200 uppercase font-black tracking-widest animate-pulse">
                                             Payé
                                         </span>
                                     )}
@@ -458,9 +458,9 @@ export default function UserFichePage() {
                             </div>
                         </div>
 
-                        <div className="flex items-center gap-3">
+                        <div className="flex flex-wrap items-center gap-3">
                             <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-                                <SelectTrigger className="w-[200px] border-[#c9b896] bg-[#f8f6f1]">
+                                <SelectTrigger className="w-[150px] sm:w-[200px] border-[#c9b896] bg-[#f8f6f1]">
                                     <SelectValue placeholder="Choisir le mois" />
                                 </SelectTrigger>
                                 <SelectContent>
