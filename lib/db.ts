@@ -1,17 +1,25 @@
 import { Pool } from 'pg';
 
-// Avoid creating multiple pools in development due to hot reloading
-const pool = (global as any).pgPool || new Pool({
-    connectionString: process.env.DATABASE_URL,
-    max: 30, // Increased for high concurrency
-    min: 5,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000,
-    statement_timeout: 60000,
-});
+// Singleton pattern to prevent multiple pools in development
+let pool: Pool;
 
-if (process.env.NODE_ENV !== 'production') {
-    (global as any).pgPool = pool;
+if (process.env.NODE_ENV === 'production') {
+    pool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+        max: 20,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 5000,
+    });
+} else {
+    if (!(global as any).pgPool) {
+        (global as any).pgPool = new Pool({
+            connectionString: process.env.DATABASE_URL,
+            max: 20, // Lowered but still enough for parallel recompute
+            idleTimeoutMillis: 30000,
+            connectionTimeoutMillis: 5000,
+        });
+    }
+    pool = (global as any).pgPool;
 }
 
 // Increase max listeners to prevent warning

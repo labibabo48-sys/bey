@@ -776,11 +776,24 @@ async function initializePayrollTable(month: string) {
         const daysInMonth = new Date(year, monthIdx, 0).getDate();
         const usersRes = await client.query('SELECT id, username FROM public.users');
 
+        const userIds: number[] = [];
+        const usernames: string[] = [];
+        const dates: string[] = [];
+
         for (const user of usersRes.rows) {
           for (let d = 1; d <= daysInMonth; d++) {
-            const dateStr = `${year}-${String(monthIdx).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-            await client.query(`INSERT INTO public."${tableName}"(user_id, username, date) VALUES($1, $2, $3) ON CONFLICT DO NOTHING`, [user.id, user.username, dateStr]);
+            userIds.push(user.id);
+            usernames.push(user.username);
+            dates.push(`${year}-${String(monthIdx).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
           }
+        }
+
+        if (userIds.length > 0) {
+          await client.query(`
+            INSERT INTO public."${tableName}"(user_id, username, date) 
+            SELECT * FROM unnest($1::int[], $2::text[], $3::date[]) 
+            ON CONFLICT DO NOTHING
+          `, [userIds, usernames, dates]);
         }
       }
       await client.query('COMMIT');
