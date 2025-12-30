@@ -2021,6 +2021,7 @@ const resolvers = {
         await pool.query('ALTER TABLE public.users ADD COLUMN IF NOT EXISTS photo TEXT');
         await pool.query('ALTER TABLE public.users ADD COLUMN IF NOT EXISTS is_blocked BOOLEAN DEFAULT false');
         await pool.query('ALTER TABLE public.users ADD COLUMN IF NOT EXISTS nbmonth INT');
+        await pool.query('ALTER TABLE public.users ALTER COLUMN nbmonth DROP NOT NULL');
         await pool.query('ALTER TABLE public.users ALTER COLUMN zktime_id DROP NOT NULL');
       } catch (e) { }
 
@@ -2040,6 +2041,7 @@ const resolvers = {
         await pool.query('ALTER TABLE public.users ADD COLUMN IF NOT EXISTS photo TEXT');
         await pool.query('ALTER TABLE public.users ADD COLUMN IF NOT EXISTS is_blocked BOOLEAN DEFAULT false');
         await pool.query('ALTER TABLE public.users ADD COLUMN IF NOT EXISTS nbmonth INT');
+        await pool.query('ALTER TABLE public.users ALTER COLUMN nbmonth DROP NOT NULL');
       } catch (e) { }
 
       const { username, email, phone, cin, departement, role, zktime_id, status, base_salary, photo, is_blocked, nbmonth } = input;
