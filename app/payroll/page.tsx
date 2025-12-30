@@ -129,7 +129,7 @@ const UNPAY_USER = gql`
 // Helper to calculate stats
 const calculateUserStats = (user: any, userRecords: any[], userSchedule: any, monthDate: Date) => {
   const daysInMonth = getDaysInMonth(monthDate);
-  const divisor = user.nbmonth || daysInMonth;
+  const divisor = Number(user.nbmonth) || daysInMonth; // Ensure number
   const presentDays = userRecords.filter((r: any) => r.present === 1).length;
 
   const baseSalary = user.base_salary || 0;
@@ -151,8 +151,8 @@ const calculateUserStats = (user: any, userRecords: any[], userSchedule: any, mo
   // USER LOGIC: Net Salary does NOT include primes/extras/doublages because they are paid immediately
   const netSalary = calculatedSalary - deductions;
 
-  // For display of "Jours Abs", we show how many days were NOT paid
-  const absentDays = daysInMonth - paidDays;
+  // For display of "Jours Abs", we show how many days were NOT paid vs the contract (divisor)
+  const absentDays = Math.max(0, divisor - paidDays);
 
   return {
     baseSalary,
@@ -518,7 +518,7 @@ export default function PayrollPage() {
       totalPrimes: filteredPayrollSummary.reduce((acc: number, curr: any) => acc + curr.totalPrimes, 0),
       totalExtras: filteredPayrollSummary.reduce((acc: number, curr: any) => acc + curr.totalExtras, 0),
       totalDoublages: filteredPayrollSummary.reduce((acc: number, curr: any) => acc + curr.totalDoublages, 0),
-      totalNet: filteredPayrollSummary.reduce((acc: number, curr: any) => acc + curr.netSalary, 0),
+      totalNet: filteredPayrollSummary.reduce((acc: number, curr: any) => acc + (curr.isPaid ? 0 : curr.netSalary), 0),
       totalPaid: filteredPayrollSummary.reduce((acc: number, curr: any) => acc + (curr.isPaid ? curr.netSalary : 0), 0),
     }
   }, [filteredPayrollSummary]);
@@ -884,19 +884,19 @@ export default function PayrollPage() {
             {canSee('payroll', 'stats_total_base') && (
               <Card className="border-[#c9b896] bg-white p-4 shadow-md">
                 <p className="text-sm text-[#6b5744]">Total Salaires Base {selectedDepartment !== "all" ? `(${selectedDepartment})` : (searchTerm ? "(Filtré)" : "")}</p>
-                <p className="text-2xl font-bold text-[#3d2c1e]">{Math.round(globalStats.totalPay)} DT</p>
+                <p className="text-2xl font-bold text-[#3d2c1e]">{globalStats.totalPay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} DT</p>
               </Card>
             )}
             {canSee('payroll', 'stats_avances') && (
               <Card className="border-[#c9b896] bg-white p-4 shadow-md">
                 <p className="text-sm text-[#6b5744]">Avances {selectedDepartment !== "all" ? `(${selectedDepartment})` : (searchTerm ? "(Filtré)" : "")}</p>
-                <p className="text-2xl font-bold text-[#a0522d]">{Math.round(globalStats.totalAdvances)} DT</p>
+                <p className="text-2xl font-bold text-[#a0522d]">{globalStats.totalAdvances.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} DT</p>
               </Card>
             )}
             {canSee('payroll', 'stats_net_global') && (
               <Card className="border-[#c9b896] bg-white p-4 shadow-md">
                 <p className="text-sm text-[#6b5744]">Net Global {selectedDepartment !== "all" ? `(${selectedDepartment})` : (searchTerm ? "(Filtré)" : "")}</p>
-                <p className="text-2xl font-bold text-[#c9a227]">{Math.round(globalStats.totalNet)} DT</p>
+                <p className="text-2xl font-bold text-[#c9a227]">{globalStats.totalNet.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} DT</p>
               </Card>
             )}
             <Card
@@ -904,7 +904,7 @@ export default function PayrollPage() {
               onClick={() => setViewPaidOpen(true)}
             >
               <p className="text-sm text-green-700 font-semibold">Total Payé {selectedDepartment !== "all" ? `(${selectedDepartment})` : (searchTerm ? "(Filtré)" : "")}</p>
-              <p className="text-2xl font-bold text-green-600">{Math.round(globalStats.totalPaid)} DT</p>
+              <p className="text-2xl font-bold text-green-600">{globalStats.totalPaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} DT</p>
             </Card>
             {canSee('payroll', 'stats_primes') && (
               <Card
@@ -1002,14 +1002,14 @@ export default function PayrollPage() {
                           </button>
                         </td>
                       )}
-                      {canSee('payroll', 'col_base') && <td className="p-4 font-medium text-[#3d2c1e]">{Math.round(p.baseSalary)}</td>}
+                      {canSee('payroll', 'col_base') && <td className="p-4 font-medium text-[#3d2c1e]">{p.baseSalary.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>}
                       {canSee('payroll', 'col_abs_days') && <td className="p-4 text-red-600 font-bold">{p.absentDays}</td>}
                       {canSee('payroll', 'col_primes') && <td className="p-4 text-emerald-600">+{Math.round(p.totalPrimes)}</td>}
                       {canSee('payroll', 'col_extra') && <td className="p-4 text-emerald-600">+{Math.round(p.totalExtras)}</td>}
                       {canSee('payroll', 'col_doublage') && <td className="p-4 text-cyan-600">+{Math.round(p.totalDoublages)}</td>}
                       {canSee('payroll', 'col_retenues') && <td className="p-4 text-red-600">-{Math.round(p.totalInfractions)}</td>}
                       {canSee('payroll', 'col_avance') && <td className="p-4 text-amber-600">-{Math.round(p.totalAdvances)}</td>}
-                      {canSee('payroll', 'col_net') && <td className="p-4 font-bold text-lg text-[#3d2c1e]">{Math.round(p.netSalary)} DT</td>}
+                      {canSee('payroll', 'col_net') && <td className="p-4 font-bold text-lg text-[#3d2c1e]">{p.netSalary.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} DT</td>}
                       {canSee('payroll', 'col_action') && (
                         <td className="p-4">
                           <div className="flex items-center gap-2">

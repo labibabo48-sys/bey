@@ -30,6 +30,8 @@ const GET_FINANCE_DATA = gql`
             username
             departement
             base_salary
+            nbmonth
+            is_blocked
         }
     }
     getPayroll(month: $month) {
@@ -43,6 +45,7 @@ const GET_FINANCE_DATA = gql`
         infraction
         retard
         doublage
+        paid
     }
   }
 `
@@ -75,11 +78,11 @@ export default function FinancePage() {
 
     // Calculate Metrics
     const metrics = useMemo(() => {
-        const users = data?.personnelStatus?.map((p: any) => p.user) || []
-        const records = data?.getPayroll || []
+        // Filter out blocked users to match Payroll Dashboard logic
+        const allUsers = data?.personnelStatus?.map((p: any) => p.user) || []
+        const users = allUsers.filter((u: any) => !u.is_blocked)
 
-        // 1. Total Base Salary
-        const totalBaseSalary = users.reduce((sum: number, u: any) => sum + (u.base_salary || 0), 0)
+        const records = data?.getPayroll || []
 
         // 2. Aggregates from Records
         let totalAvances = 0
@@ -88,36 +91,57 @@ export default function FinancePage() {
         let totalDoublage = 0
         let totalInfractions = 0 // "Retenues Retard/Infraction"
         let totalAbsenceCost = 0
+        let totalNetGlobal = 0
+        let totalPaid = 0
+        let totalRemaining = 0
+        let totalBaseSalary = 0
+
+        // Use standard date utility like other pages, or just get days in month
+        const daysInMon = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1, 0).getDate();
 
         // Let's iterate users to be precise
         users.forEach((user: any) => {
             const userRecords = records.filter((r: any) => String(r.user_id) === String(user.id))
 
-            // Sum simple fields
-            totalAvances += userRecords.reduce((sum: number, r: any) => sum + (r.acompte || 0), 0)
-            totalPrimes += userRecords.reduce((sum: number, r: any) => sum + (r.prime || 0), 0)
-            totalExtras += userRecords.reduce((sum: number, r: any) => sum + (r.extra || 0), 0)
-            totalDoublage += userRecords.reduce((sum: number, r: any) => sum + (r.doublage || 0), 0)
-            totalInfractions += userRecords.reduce((sum: number, r: any) => sum + (r.infraction || 0), 0)
+            const divisor = Number(user.nbmonth) || daysInMon
+            const dayValue = (user.base_salary || 0) / divisor
+            const presentDays = userRecords.filter((r: any) => r.present === 1).length
 
-            // Calc Absence Cost
-            // Rule: Absence = present=0 AND date <= yesterday (to avoid future deductions)
-            const dayValue = (user.base_salary || 0) / 30
-            const yesterday = new Date()
-            yesterday.setDate(yesterday.getDate() - 1)
-            const yesterdayStr = format(yesterday, 'yyyy-MM-dd')
+            // Payroll logic: (Base / Divisor) * PresentDays
+            const calculatedSalary = dayValue * presentDays
 
-            const absentCount = userRecords.filter((r: any) => {
-                // formatted date in record is 'YYYY-MM-DD'
-                return r.date <= yesterdayStr && r.present === 0
-            }).length
+            // Primes / Extras / etc
+            const avances = userRecords.reduce((sum: number, r: any) => sum + (r.acompte || 0), 0)
+            const primes = userRecords.reduce((sum: number, r: any) => sum + (r.prime || 0), 0)
+            const extras = userRecords.reduce((sum: number, r: any) => sum + (r.extra || 0), 0)
+            const doublages = userRecords.reduce((sum: number, r: any) => sum + (r.doublage || 0), 0)
+            const infractions = userRecords.reduce((sum: number, r: any) => sum + (r.infraction || 0), 0)
 
-            totalAbsenceCost += (absentCount * dayValue)
+            totalAvances += avances
+            totalPrimes += primes
+            totalExtras += extras
+            totalDoublage += doublages
+            totalInfractions += infractions
+            totalBaseSalary += (user.base_salary || 0)
+
+            // Net for this user
+            const userNet = calculatedSalary - avances - infractions
+
+            // Check if paid
+            const isPaid = userRecords.some((r: any) => r.paid === true)
+
+            totalNetGlobal += userNet // Accumulate Total Net (All)
+
+            if (isPaid) {
+                totalPaid += userNet
+            } else {
+                totalRemaining += userNet
+            }
+
+            // "Cost of Absence"
+            const absentDays = Math.max(0, divisor - presentDays)
+            totalAbsenceCost += (absentDays * dayValue)
         })
-
-        // Total Net Flow
-        // Net = Base + Prime + Extra + Doublage - Avance - Infraction - AbsenceCost
-        const totalNetToPay = totalBaseSalary + totalPrimes + totalExtras + totalDoublage - totalAvances - totalInfractions - totalAbsenceCost
 
         return {
             totalBaseSalary,
@@ -127,7 +151,9 @@ export default function FinancePage() {
             totalDoublage,
             totalInfractions,
             totalAbsenceCost,
-            totalNetToPay
+            totalNetGlobal,
+            totalPaid,
+            totalRemaining
         }
     }, [data, selectedMonth])
 
@@ -137,20 +163,18 @@ export default function FinancePage() {
         const records = data?.getPayroll || []
         const depts: Record<string, number> = {}
 
+        const daysInMon = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1, 0).getDate();
+
         users.forEach((user: any) => {
             const dept = user.departement || "Autre"
             if (!depts[dept]) depts[dept] = 0
 
-            // Calculate Net for user
             const userRecords = records.filter((r: any) => String(r.user_id) === String(user.id))
-            const dayValue = (user.base_salary || 0) / 30
-            const yesterday = new Date()
-            yesterday.setDate(yesterday.getDate() - 1)
-            const yesterdayStr = format(yesterday, 'yyyy-MM-dd')
+            const divisor = Number(user.nbmonth) || daysInMon
+            const dayValue = (user.base_salary || 0) / divisor
+            const presentDays = userRecords.filter((r: any) => r.present === 1).length
 
-            const absentCount = userRecords.filter((r: any) => {
-                return r.date <= yesterdayStr && r.present === 0
-            }).length
+            const calculatedSalary = dayValue * presentDays
 
             const primes = userRecords.reduce((s: number, r: any) => s + (r.prime || 0), 0)
             const extras = userRecords.reduce((s: number, r: any) => s + (r.extra || 0), 0)
@@ -158,13 +182,13 @@ export default function FinancePage() {
             const avances = userRecords.reduce((s: number, r: any) => s + (r.acompte || 0), 0)
             const infractions = userRecords.reduce((s: number, r: any) => s + (r.infraction || 0), 0)
 
-            const net = (user.base_salary || 0) + primes + extras + doublages - avances - infractions - (absentCount * dayValue)
-
+            // Net for this user (Excluding primes/extras/doublages to match Payroll logic)
+            const net = calculatedSalary - avances - infractions
             depts[dept] += net
         })
 
         return Object.entries(depts).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value)
-    }, [data])
+    }, [data, selectedMonth])
 
 
     return (
@@ -201,62 +225,75 @@ export default function FinancePage() {
                 <div className="p-4 sm:p-6 lg:p-8 space-y-6">
 
                     {/* Top Cards Row */}
-                    <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+                    <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
                         <Card className="border-[#c9b896] bg-white p-6 shadow-md">
                             <div className="flex justify-between items-center">
                                 <div>
-                                    <p className="text-xs font-bold text-[#6b5744] uppercase tracking-wider mb-1">Masse Salariale Base</p>
-                                    <p className="text-3xl font-black text-[#3d2c1e]">{Math.round(metrics.totalBaseSalary)} <span className="text-lg text-[#6b5744]">DT</span></p>
+                                    <p className="text-xs font-bold text-[#6b5744] uppercase tracking-wider mb-1">Masse Salariale</p>
+                                    <p className="text-2xl font-black text-[#3d2c1e]">{metrics.totalBaseSalary.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-sm text-[#6b5744]">DT</span></p>
                                 </div>
-                                <div className="p-3 bg-[#8b5a2b]/10 rounded-full">
-                                    <DollarSign className="h-6 w-6 text-[#8b5a2b]" />
+                                <div className="p-2 bg-[#8b5a2b]/10 rounded-full">
+                                    <DollarSign className="h-5 w-5 text-[#8b5a2b]" />
                                 </div>
                             </div>
-                            <p className="text-[10px] text-[#6b5744]/70 mt-2 font-medium">Cumul des salaires de base (sans primes/déductions)</p>
                         </Card>
 
                         <Card className="border-[#c9b896] bg-gradient-to-br from-[#8b5a2b] to-[#6b4423] text-white p-6 shadow-md relative overflow-hidden">
                             <div className="relative z-10">
-                                <p className="text-xs font-bold text-white/80 uppercase tracking-wider mb-1">Net à Payer Global</p>
-                                <p className="text-4xl font-black">{Math.round(metrics.totalNetToPay)} <span className="text-xl opacity-80">DT</span></p>
+                                <p className="text-xs font-bold text-white/80 uppercase tracking-wider mb-1">Reste à Payer</p>
+                                <p className="text-2xl font-black text-white">{metrics.totalRemaining.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-sm opacity-80">DT</span></p>
                             </div>
                             <div className="absolute right-[-10px] bottom-[-10px] opacity-10 rotate-12">
-                                <Wallet className="h-32 w-32" />
+                                <Wallet className="h-24 w-24" />
                             </div>
-                            <p className="relative z-10 text-[10px] text-white/60 mt-2 font-medium">Estimation finale après calculs</p>
+                        </Card>
+
+                        <Card className="border-green-500 bg-green-50 p-6 shadow-md">
+                            <div className="flex justify-between items-center">
+                                <div>
+                                    <p className="text-xs font-bold text-green-700 uppercase tracking-wider mb-1">Déjà Payé</p>
+                                    <p className="text-2xl font-black text-green-600">{metrics.totalPaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-sm text-green-600/70">DT</span></p>
+                                </div>
+                                <div className="p-2 bg-green-100 rounded-full">
+                                    <TrendingUp className="h-5 w-5 text-green-600" />
+                                </div>
+                            </div>
                         </Card>
 
                         <Card className="border-[#c9b896] bg-white p-6 shadow-md">
                             <div className="flex justify-between items-center">
                                 <div>
                                     <p className="text-xs font-bold text-[#6b5744] uppercase tracking-wider mb-1">Total Avances</p>
-                                    <p className="text-3xl font-black text-amber-600">{Math.round(metrics.totalAvances)} <span className="text-lg text-amber-600/70">DT</span></p>
+                                    <p className="text-2xl font-black text-amber-600">{metrics.totalAvances.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-sm text-amber-600/70">DT</span></p>
                                 </div>
-                                <div className="p-3 bg-amber-50 rounded-full">
-                                    <TrendingUp className="h-6 w-6 text-amber-600" />
+                                <div className="p-2 bg-amber-50 rounded-full">
+                                    <TrendingUp className="h-5 w-5 text-amber-600" />
                                 </div>
                             </div>
-                            <p className="text-[10px] text-[#6b5744]/70 mt-2 font-medium">Somme déjà versée aux employés</p>
                         </Card>
                     </div>
 
                     {/* Detailed Stats Cards */}
-                    <div className="grid gap-6 grid-cols-2 lg:grid-cols-4">
+                    <div className="grid gap-6 grid-cols-2 lg:grid-cols-5">
                         <Card className="border-[#c9b896] bg-white p-5 shadow-sm hover:shadow-md transition-shadow">
                             <p className="text-[10px] font-bold text-[#6b5744] uppercase tracking-wider mb-2">Total Doublages</p>
-                            <p className="text-2xl font-bold text-cyan-600">+{Math.round(metrics.totalDoublage)} DT</p>
+                            <p className="text-2xl font-bold text-cyan-600">+{metrics.totalDoublage.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} DT</p>
                         </Card>
                         <Card className="border-[#c9b896] bg-white p-5 shadow-sm hover:shadow-md transition-shadow">
                             <p className="text-[10px] font-bold text-[#6b5744] uppercase tracking-wider mb-2">Total Extras</p>
-                            <p className="text-2xl font-bold text-emerald-600">+{Math.round(metrics.totalExtras)} DT</p>
+                            <p className="text-2xl font-bold text-emerald-600">+{metrics.totalExtras.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} DT</p>
                         </Card>
                         <Card className="border-[#c9b896] bg-white p-5 shadow-sm hover:shadow-md transition-shadow">
                             <p className="text-[10px] font-bold text-[#6b5744] uppercase tracking-wider mb-2">Total Primes</p>
-                            <p className="text-2xl font-bold text-emerald-600">+{Math.round(metrics.totalPrimes)} DT</p>
+                            <p className="text-2xl font-bold text-emerald-600">+{metrics.totalPrimes.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} DT</p>
                         </Card>
                         <Card className="border-[#c9b896] bg-white p-5 shadow-sm hover:shadow-md transition-shadow">
                             <p className="text-[10px] font-bold text-[#6b5744] uppercase tracking-wider mb-2">Total Retenues</p>
-                            <p className="text-2xl font-bold text-red-600">-{Math.round(metrics.totalInfractions + metrics.totalAbsenceCost)} DT</p>
+                            <p className="text-2xl font-bold text-red-600">-{metrics.totalInfractions.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} DT</p>
+                        </Card>
+                        <Card className="border-[#c9b896] bg-white p-5 shadow-sm hover:shadow-md transition-shadow">
+                            <p className="text-[10px] font-bold text-[#6b5744] uppercase tracking-wider mb-2">Coût Absences</p>
+                            <p className="text-2xl font-bold text-red-600">-{metrics.totalAbsenceCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} DT</p>
                         </Card>
                     </div>
 
@@ -275,7 +312,7 @@ export default function FinancePage() {
                                             <span className="w-6 h-6 rounded-full bg-[#8b5a2b] text-white flex items-center justify-center text-xs font-bold mr-3">{idx + 1}</span>
                                             <span className="font-medium text-[#3d2c1e]">{dept.name}</span>
                                         </div>
-                                        <span className="font-bold text-[#3d2c1e]">{Math.round(dept.value)} DT</span>
+                                        <span className="font-bold text-[#3d2c1e]">{dept.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} DT</span>
                                     </div>
                                 ))}
                                 {deptStats.length === 0 && <p className="text-center text-[#6b5744] py-4">Aucune donnée disponible.</p>}
@@ -291,20 +328,20 @@ export default function FinancePage() {
                             <div className="space-y-4">
                                 <div className="flex justify-between items-center p-3 bg-red-50 rounded-lg border border-red-100">
                                     <span className="text-red-800 font-medium text-sm">Coût des Absences</span>
-                                    <span className="text-red-700 font-bold text-lg">-{Math.round(metrics.totalAbsenceCost)} DT</span>
+                                    <span className="text-red-700 font-bold text-lg">-{metrics.totalAbsenceCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} DT</span>
                                 </div>
                                 <div className="flex justify-between items-center p-3 bg-amber-50 rounded-lg border border-amber-100">
                                     <div className="flex flex-col">
                                         <span className="text-amber-800 font-medium text-sm">Retenues & Pénalités</span>
                                         <span className="text-xs text-amber-600">Infractions, Retards, etc.</span>
                                     </div>
-                                    <span className="text-amber-700 font-bold text-lg">-{Math.round(metrics.totalInfractions)} DT</span>
+                                    <span className="text-amber-700 font-bold text-lg">-{metrics.totalInfractions.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} DT</span>
                                 </div>
                             </div>
 
                             <div className="mt-6 pt-4 border-t border-[#c9b896]/30">
                                 <p className="text-center text-xs text-[#6b5744]">
-                                    L'optimisation des absences pourrait économiser <span className="font-bold text-[#8b5a2b]">{Math.round(metrics.totalAbsenceCost)} DT</span> ce mois-ci.
+                                    L'optimisation des absences pourrait économiser <span className="font-bold text-[#8b5a2b]">{metrics.totalAbsenceCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} DT</span> ce mois-ci.
                                 </p>
                             </div>
                         </Card>
