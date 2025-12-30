@@ -1,7 +1,8 @@
 import { ApolloServer } from '@apollo/server';
 import { startServerAndCreateNextHandler } from '@as-integrations/next';
 import { NextRequest } from 'next/server';
-import pool from '@/lib/db';
+import createPool from '@/lib/db';
+const pool = createPool();
 
 const typeDefs = `#graphql
   type User {
@@ -676,7 +677,7 @@ async function initializePayrollTable(month: string) {
   // Fast path: Check existence and run migrations if table exists
   try {
     const check = await pool.query(`SELECT 1 FROM public."${tableName}" LIMIT 1`);
-    if (check.rowCount >= 0) {
+    if (check.rowCount !== null && check.rowCount >= 0) {
       // Table exists, ensure it has the latest columns in a single batch
       try {
         await pool.query(`
