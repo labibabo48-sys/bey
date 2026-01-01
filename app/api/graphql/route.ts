@@ -1203,7 +1203,7 @@ async function recomputePayrollForDate(targetDateStr: string, specificUserId: st
     let clockOut = null;
     if (userPunches.length > 0) {
       clockIn = formatTime(userPunches[0].device_time);
-      if (userPunches.length > 1 && userPunches.length % 2 === 0) {
+      if (userPunches.length > 1) {
         clockOut = formatTime(userPunches[userPunches.length - 1].device_time);
       }
     }
@@ -1769,23 +1769,29 @@ const resolvers = {
       await initializePayrollTable(month);
       const tableName = `paiecurrent_${month}`;
       try {
-        const res = await pool.query(`SELECT * FROM public.\"${tableName}\" WHERE present = 1`);
-        const payroll = res.rows;
+        const payrollRes = await pool.query(`SELECT * FROM public.\"${tableName}\"`);
+        const payroll = payrollRes.rows;
 
         const usersRes = await pool.query('SELECT id, username, photo, \"département\" as departement FROM public.users WHERE role != \'admin\' AND is_blocked = FALSE');
         const users = usersRes.rows;
 
-        const statsMap = new Map();
+        const statsMap = new Map<string, { totalMins: number, daysWorked: number, totalRetard: number, onTimeDays: number, totalInfractions: number }>();
 
         payroll.forEach((row: any) => {
+          if (row.present !== 1) return;
           const uid = String(row.user_id);
           if (!statsMap.has(uid)) {
-            statsMap.set(uid, { totalMins: 0, daysWorked: 0, totalRetard: 0, onTimeDays: 0 });
+            statsMap.set(uid, { totalMins: 0, daysWorked: 0, totalRetard: 0, onTimeDays: 0, totalInfractions: 0 });
           }
-          const stats = statsMap.get(uid);
+          const stats = statsMap.get(uid)!;
           stats.daysWorked += 1;
           stats.totalRetard += (row.retard || 0);
-          if ((row.retard || 0) === 0) stats.onTimeDays += 1;
+          stats.totalInfractions += (row.infraction || 0);
+
+          // Disciplined day: 0 retard AND 0 infraction
+          if ((row.retard || 0) === 0 && (row.infraction || 0) === 0) {
+            stats.onTimeDays += 1;
+          }
 
           if (row.clock_in && row.clock_out) {
             try {
@@ -1793,7 +1799,7 @@ const resolvers = {
               const [h2, m2] = row.clock_out.split(':').map(Number);
               if (!isNaN(h1) && !isNaN(m1) && !isNaN(h2) && !isNaN(m2)) {
                 let diff = (h2 * 60 + m2) - (h1 * 60 + m1);
-                if (diff < 0) diff += 24 * 60;
+                if (diff < 0) diff += 24 * 60; // Over midnight
                 stats.totalMins += diff;
               }
             } catch (e) { }
@@ -1801,18 +1807,15 @@ const resolvers = {
         });
 
         const results = users.map((user: any) => {
-          const stats = statsMap.get(String(user.id)) || { totalMins: 0, daysWorked: 0, totalRetard: 0, onTimeDays: 0 };
+          const stats = statsMap.get(String(user.id)) || { totalMins: 0, daysWorked: 0, totalRetard: 0, onTimeDays: 0, totalInfractions: 0 };
           const totalHours = parseFloat((stats.totalMins / 60).toFixed(1));
           const avg = stats.daysWorked > 0 ? parseFloat((totalHours / stats.daysWorked).toFixed(1)) : 0;
 
-          // Performance Score: heavy weight on onTimeDays, deduction for totalRetard
-          const punctualityScore = (stats.onTimeDays * 50) + (stats.daysWorked * 10) - (stats.totalRetard) + (totalHours / 10);
+          // Performance Score: heavy weight on onTimeDays, extreme deduction for infractions and totalRetard
+          const punctualityScore = (stats.onTimeDays * 500) + (stats.daysWorked * 10) - (stats.totalRetard * 2) - (stats.totalInfractions * 50) + (totalHours);
 
           return {
-            user: {
-              ...user,
-              departement: user.departement
-            },
+            user: { ...user, departement: user.departement },
             totalHours,
             daysWorked: stats.daysWorked,
             avgHoursPerDay: avg,

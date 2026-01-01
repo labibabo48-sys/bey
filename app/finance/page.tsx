@@ -159,36 +159,18 @@ export default function FinancePage() {
 
     // Department Breakdown
     const deptStats = useMemo(() => {
-        const users = data?.personnelStatus?.map((p: any) => p.user) || []
-        const records = data?.getPayroll || []
+        const allUsers = data?.personnelStatus?.map((p: any) => p.user) || []
+        const users = allUsers.filter((u: any) => !u.is_blocked)
         const depts: Record<string, number> = {}
-
-        const daysInMon = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1, 0).getDate();
 
         users.forEach((user: any) => {
             const dept = user.departement || "Autre"
             if (!depts[dept]) depts[dept] = 0
-
-            const userRecords = records.filter((r: any) => String(r.user_id) === String(user.id))
-            const divisor = Number(user.nbmonth) || daysInMon
-            const dayValue = (user.base_salary || 0) / divisor
-            const presentDays = userRecords.filter((r: any) => r.present === 1).length
-
-            const calculatedSalary = dayValue * presentDays
-
-            const primes = userRecords.reduce((s: number, r: any) => s + (r.prime || 0), 0)
-            const extras = userRecords.reduce((s: number, r: any) => s + (r.extra || 0), 0)
-            const doublages = userRecords.reduce((s: number, r: any) => s + (r.doublage || 0), 0)
-            const avances = userRecords.reduce((s: number, r: any) => s + (r.acompte || 0), 0)
-            const infractions = userRecords.reduce((s: number, r: any) => s + (r.infraction || 0), 0)
-
-            // Net for this user (Excluding primes/extras/doublages to match Payroll logic)
-            const net = calculatedSalary - avances - infractions
-            depts[dept] += net
+            depts[dept] += (user.base_salary || 0)
         })
 
         return Object.entries(depts).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value)
-    }, [data, selectedMonth])
+    }, [data])
 
 
     return (
@@ -302,7 +284,7 @@ export default function FinancePage() {
                         <Card className="border-[#c9b896] bg-white p-6 shadow-md">
                             <div className="flex items-center gap-3 mb-6">
                                 <div className="p-2 bg-blue-100 rounded-lg"><PieChart className="h-6 w-6 text-blue-600" /></div>
-                                <h3 className="text-xl font-bold text-[#3d2c1e]">Coût Net par Département</h3>
+                                <h3 className="text-xl font-bold text-[#3d2c1e]">Masse Salariale par Département</h3>
                             </div>
 
                             <div className="space-y-3">
