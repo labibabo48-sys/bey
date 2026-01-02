@@ -240,7 +240,18 @@ export default function UserFichePage() {
 
     const handleSync = async () => {
         if (stats.isPaid) return;
-        // Sync today and yesterday
+
+        // 1. Save the nbMonth (divisor) if it was changed
+        if (nbMonth !== '' && nbMonth !== user?.nbmonth) {
+            await updateNbMonth({
+                variables: {
+                    userId: String(userId),
+                    nbmonth: Number(nbMonth)
+                }
+            })
+        }
+
+        // 2. Sync today and yesterday
         await syncAttendance({ variables: { date: format(new Date(), 'yyyy-MM-dd') } })
         await refetchPayroll()
     }
@@ -275,19 +286,8 @@ export default function UserFichePage() {
         }
     }
 
-    const handleUpdateNbMonth = async (val: number) => {
-        if (!userId) return
+    const handleNbMonthInputChange = (val: number) => {
         setNbMonth(val)
-        try {
-            await updateNbMonth({
-                variables: {
-                    userId: String(userId),
-                    nbmonth: val
-                }
-            })
-        } catch (err) {
-            console.error("Update NbMonth Error:", err)
-        }
     }
 
     const startEdit = (record: any) => {
@@ -476,7 +476,7 @@ export default function UserFichePage() {
                                     id="nbmonth"
                                     type="number"
                                     value={nbMonth}
-                                    onChange={(e) => handleUpdateNbMonth(parseInt(e.target.value) || 0)}
+                                    onChange={(e) => handleNbMonthInputChange(parseInt(e.target.value) || 0)}
                                     className="w-16 h-8 border-none bg-transparent focus-visible:ring-0 p-1 text-center font-bold text-[#8b5a2b]"
                                 />
                                 <span className="text-xs text-[#6b5744]">jours</span>
