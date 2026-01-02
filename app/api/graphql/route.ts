@@ -1279,7 +1279,7 @@ const resolvers = {
                s.dim, s.lun, s.mar, s.mer, s.jeu, s.ven, s.sam
         FROM public.users u
         LEFT JOIN public.user_schedules s ON u.id = s.user_id
-        WHERE u.status = 'active' OR u.status = 'IN'
+        WHERE u.is_blocked = FALSE
         ORDER BY u."département" ASC, u.username ASC
       `);
       return res.rows;
