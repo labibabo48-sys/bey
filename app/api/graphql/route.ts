@@ -379,21 +379,10 @@ const formatDateLocal = (dateInput: Date | string) => {
   const d = new Date(dateInput);
   if (isNaN(d.getTime())) return null;
 
-  // If the time is exactly midnight UTC, it's likely a PG 'DATE' type
-  // In this case, we avoid local timezone shifting to prevent offsets
-  const isMidnightUTC = d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0;
-
-  if (isMidnightUTC) {
-    const year = d.getUTCFullYear();
-    const month = String(d.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(d.getUTCDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  }
-
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  // Extract YYYY-MM-DD in Tunisia context regardless of server TZ
+  const s = d.toLocaleDateString('fr-FR', { timeZone: 'Africa/Tunis', day: '2-digit', month: '2-digit', year: 'numeric' });
+  const [dd, mm, yyyy] = s.split('/');
+  return `${yyyy}-${mm}-${dd}`;
 };
 
 // Internal helper to ensure notifications table exists
@@ -497,6 +486,10 @@ const getTunisiaHour = (date: Date): number => {
   return parseInt(date.toLocaleTimeString('fr-FR', { hour: '2-digit', hour12: false, timeZone: 'Africa/Tunis' }));
 };
 
+const getTunisiaMinute = (date: Date): number => {
+  return parseInt(date.toLocaleTimeString('fr-FR', { minute: '2-digit', hour12: false, timeZone: 'Africa/Tunis' }));
+};
+
 const determineShift = (first: Date, last: Date | null, isOngoing: boolean) => {
   if (!first) return "Non défini";
 
@@ -544,13 +537,14 @@ const determineShift = (first: Date, last: Date | null, isOngoing: boolean) => {
 };
 
 const getLogicalDate = (date: Date) => {
-  // If before 7AM, it belongs to previous day
-  // Matches the CUTOFF_HOUR used in business logic
+  // If before 4AM Tunisia, it belongs to previous day
   const d = new Date(date);
-  if (d.getHours() < 4) {
+  const h = getTunisiaHour(d);
+  if (h < 4) {
     d.setDate(d.getDate() - 1);
   }
-  d.setHours(0, 0, 0, 0);
+  // Standardize to 12:00 to avoid TZ edge case flips when just Y-M-D is extracted
+  d.setHours(12, 0, 0, 0);
   return d;
 };
 
@@ -2070,8 +2064,11 @@ const resolvers = {
         const todayNow = new Date();
         const currentLogicalDate = getLogicalDate(todayNow);
         const isToday = formatDateLocal(logicalDay) === formatDateLocal(currentLogicalDate);
-        const currentHourReal = todayNow.getHours();
-        const currentMin = todayNow.getMinutes();
+
+        // TZ: Use Tunisia hour/min instead of server-local (Vercel=UTC vs Local=Tunis)
+        const currentHourReal = getTunisiaHour(todayNow);
+        const currentMin = getTunisiaMinute(todayNow);
+
         // Adjust hour for logical day tail (00:00 - 04:00)
         const adjustedHour = (currentHourReal < 4) ? currentHourReal + 24 : currentHourReal;
         const currentTotalMins = adjustedHour * 60 + currentMin;
