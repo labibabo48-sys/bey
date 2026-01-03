@@ -257,11 +257,11 @@ export default function AllSchedulesPlacementPage() {
                                         </td>
                                     </tr>
                                     {SHIFT_OPTIONS.filter(o => o.value !== "Doublage").map(shiftOpt => (
-                                        <tr key={`${dept}-${shiftOpt.value}`} className={cn("group transition-colors border-b", shiftOpt.bg, "hover:brightness-[0.98]")}>
+                                        <tr key={`${dept}-${shiftOpt.value}`} className={cn("group transition-colors", shiftOpt.bg, "hover:brightness-[0.98]")}>
                                             {/* Left Header for Shift Name */}
                                             <td className={cn(
                                                 "p-2 lg:p-3 sticky left-0 z-30 border-r transition-colors shadow-sm",
-                                                shiftOpt.bg, shiftOpt.border
+                                                shiftOpt.bg, shiftOpt.border, "border-b-[3px] border-[#618774]"
                                             )}>
                                                 <div className={cn("flex flex-col lg:flex-row lg:items-center gap-1.5 lg:gap-2", shiftOpt.color)}>
                                                     <shiftOpt.icon className="h-3.5 w-3.5" />
@@ -290,7 +290,7 @@ export default function AllSchedulesPlacementPage() {
                                                 })
 
                                                 return (
-                                                    <td key={day.key} className={cn("p-1 lg:p-2 border-r align-top transition-colors", shiftOpt.border)}>
+                                                    <td key={day.key} className={cn("p-1 lg:p-2 border-r align-top transition-colors", shiftOpt.border, "border-b-[3px] border-[#618774]")}>
                                                         <div className="flex flex-col gap-1 min-h-[30px] lg:min-h-[50px]">
                                                             {emps.map((emp: any) => {
                                                                 const isUpdating = updatingId?.startsWith(`${emp.user_id}-${day.key}`)
