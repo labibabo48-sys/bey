@@ -114,12 +114,16 @@ export default function AllSchedulesPlacementPage() {
 
     const depts = useMemo(() => {
         const list = new Set(filteredSchedules.map((s: any) => s.departement || "Autre"))
+
+        // Helper to generate sort sortKey
+        const getSortKey = (d: string) => {
+            if (d === "Cuisine") return "Chef_Cuisine_1"; // Force Cuisine to follow Chef_Cuisine
+            if (d === "Chef_Cuisine") return "Chef_Cuisine_0"; // Ensure Chef_Cuisine is the anchor
+            return d;
+        };
+
         return Array.from(list).sort((a: any, b: any) => {
-            // Priority: Chef_Cuisine then Cuisine
-            if (a === "Chef_Cuisine" && b === "Cuisine") return -1;
-            if (a === "Cuisine" && b === "Chef_Cuisine") return 1;
-            // Default alphabetic
-            return a.localeCompare(b);
+            return getSortKey(a).localeCompare(getSortKey(b));
         })
     }, [filteredSchedules])
 
@@ -252,7 +256,7 @@ export default function AllSchedulesPlacementPage() {
                                             </div>
                                         </td>
                                     </tr>
-                                    {SHIFT_OPTIONS.map(shiftOpt => (
+                                    {SHIFT_OPTIONS.filter(o => o.value !== "Doublage").map(shiftOpt => (
                                         <tr key={`${dept}-${shiftOpt.value}`} className={cn("group transition-colors border-b", shiftOpt.bg, "hover:brightness-[0.98]")}>
                                             {/* Left Header for Shift Name */}
                                             <td className={cn(
@@ -267,16 +271,35 @@ export default function AllSchedulesPlacementPage() {
 
                                             {/* Cells for Days */}
                                             {DAYS.map(day => {
-                                                const emps = filteredSchedules.filter((s: any) =>
-                                                    (s.departement || "Autre") === dept &&
-                                                    (shiftOpt.value === null ? !s[day.key] : s[day.key] === shiftOpt.value)
-                                                )
+                                                const emps = filteredSchedules.filter((s: any) => {
+                                                    const employeeShift = s[day.key];
+                                                    const deptMatch = (s.departement || "Autre") === dept;
+
+                                                    if (!deptMatch) return false;
+
+                                                    if (shiftOpt.value === "Matin") {
+                                                        return employeeShift === "Matin" || employeeShift === "Doublage";
+                                                    }
+                                                    if (shiftOpt.value === "Soir") {
+                                                        return employeeShift === "Soir" || employeeShift === "Doublage";
+                                                    }
+
+                                                    // Default behavior for Repos, etc.
+                                                    if (shiftOpt.value === null) return !employeeShift;
+                                                    return employeeShift === shiftOpt.value;
+                                                })
 
                                                 return (
                                                     <td key={day.key} className={cn("p-1 lg:p-2 border-r align-top transition-colors", shiftOpt.border)}>
                                                         <div className="flex flex-col gap-1 min-h-[30px] lg:min-h-[50px]">
                                                             {emps.map((emp: any) => {
                                                                 const isUpdating = updatingId?.startsWith(`${emp.user_id}-${day.key}`)
+                                                                const actualShift = emp[day.key];
+                                                                const isDoublage = actualShift === "Doublage";
+                                                                const displayStyle = isDoublage
+                                                                    ? SHIFT_OPTIONS.find(o => o.value === "Doublage") || shiftOpt
+                                                                    : shiftOpt;
+
                                                                 return (
                                                                     <DropdownMenu
                                                                         key={emp.user_id}
@@ -293,8 +316,8 @@ export default function AllSchedulesPlacementPage() {
                                                                                 onPointerLeave={onLongPressEnd}
                                                                                 className={cn(
                                                                                     "flex items-center gap-2 px-1.5 py-1.5 rounded-lg transition-all active:scale-95 text-left w-full overflow-hidden border shadow-[0_1px_2px_rgba(0,0,0,0.05)]",
-                                                                                    shiftOpt.iconBg, "hover:shadow-md",
-                                                                                    shiftOpt.border,
+                                                                                    displayStyle.iconBg, "hover:shadow-md",
+                                                                                    displayStyle.border,
                                                                                     isUpdating && "opacity-50 grayscale cursor-not-allowed"
                                                                                 )}
                                                                             >
