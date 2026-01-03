@@ -44,6 +44,13 @@ const GET_ALL_EMPLOYEES = gql`
       state
       shift
       is_blocked
+      schedule {
+        is_coupure
+        p1_in
+        p1_out
+        p2_in
+        p2_out
+      }
     }
   }
 `
@@ -104,6 +111,19 @@ const TOGGLE_USER_BLOCK = gql`
   }
 `
 
+const UPDATE_USER_SCHEDULE = gql`
+  mutation UpdateUserSchedule($userId: ID!, $schedule: ScheduleInput!) {
+    updateUserSchedule(userId: $userId, schedule: $schedule) {
+      user_id
+      is_coupure
+      p1_in
+      p1_out
+      p2_in
+      p2_out
+    }
+  }
+`
+
 import { getCurrentUser } from "@/lib/mock-data"
 
 export default function EmployeesPage() {
@@ -160,6 +180,11 @@ function EmployeesContent() {
     cinPhotoFront: "",
     cinPhotoBack: "",
     nbmonth: null as number | null,
+    isCoupure: false,
+    p1_in: "08:00",
+    p1_out: "12:00",
+    p2_in: "14:00",
+    p2_out: "18:00",
   })
 
   const [showCinPhotoDialog, setShowCinPhotoDialog] = useState(false)
@@ -181,13 +206,15 @@ function EmployeesContent() {
     onCompleted: () => refetch()
   });
 
+  const [updateUserSchedule] = useMutation(UPDATE_USER_SCHEDULE);
+
   // Transform Data
   const employees = useMemo(() => {
     if (!data?.personnelStatus) return [];
     return data.personnelStatus.map((p: any) => ({
       id: p.user.id,
       name: p.user.username,
-      email: p.user.email || `${p.user.username?.toLowerCase().replace(/ /g, '.')}@businessbey.com`, // Temporary fallback if GQL doesn't return check
+      email: p.user.email || `${p.user.username?.toLowerCase().replace(/ /g, '.')}@businessbey.com`,
       phone: p.user.phone || "",
       cin: p.user.cin || "",
       department: p.user.departement || "Non assigné",
@@ -200,7 +227,12 @@ function EmployeesContent() {
       cinPhotoBack: p.user.cin_photo_back || "",
       is_blocked: !!p.user.is_blocked,
       nbmonth: p.user.nbmonth || null,
-      managerId: null
+      managerId: null,
+      isCoupure: p.schedule?.is_coupure || false,
+      p1_in: p.schedule?.p1_in || "08:00",
+      p1_out: p.schedule?.p1_out || "12:00",
+      p2_in: p.schedule?.p2_in || "14:00",
+      p2_out: p.schedule?.p2_out || "18:00",
     }));
   }, [data]);
 
@@ -269,6 +301,11 @@ function EmployeesContent() {
       cinPhotoFront: "",
       cinPhotoBack: "",
       nbmonth: null,
+      isCoupure: false,
+      p1_in: "08:00",
+      p1_out: "12:00",
+      p2_in: "14:00",
+      p2_out: "18:00",
     })
   }
 
@@ -405,6 +442,22 @@ function EmployeesContent() {
         });
       }
 
+      // Save Coupure timing if needed
+      if (newUserId) {
+        await updateUserSchedule({
+          variables: {
+            userId: newUserId,
+            schedule: {
+              is_coupure: formData.isCoupure,
+              p1_in: formData.p1_in,
+              p1_out: formData.p1_out,
+              p2_in: formData.p2_in,
+              p2_out: formData.p2_out
+            }
+          }
+        });
+      }
+
       setShowAddDialog(false)
       resetForm()
       await refetch()
@@ -432,6 +485,11 @@ function EmployeesContent() {
       cinPhotoFront: employee.cinPhotoFront || "",
       cinPhotoBack: employee.cinPhotoBack || "",
       nbmonth: employee.nbmonth || null,
+      isCoupure: employee.isCoupure || false,
+      p1_in: employee.p1_in || "08:00",
+      p1_out: employee.p1_out || "12:00",
+      p2_in: employee.p2_in || "14:00",
+      p2_out: employee.p2_out || "18:00",
     })
     setShowEditDialog(true)
   }
@@ -469,6 +527,20 @@ function EmployeesContent() {
           }
         });
       }
+
+      // Update Schedule
+      await updateUserSchedule({
+        variables: {
+          userId: selectedEmployee.id,
+          schedule: {
+            is_coupure: formData.isCoupure,
+            p1_in: formData.p1_in,
+            p1_out: formData.p1_out,
+            p2_in: formData.p2_in,
+            p2_out: formData.p2_out
+          }
+        }
+      });
 
       setShowEditDialog(false)
       setSelectedEmployee(null)
@@ -1006,6 +1078,81 @@ function EmployeesContent() {
                 )}
               </div>
 
+            </div>
+
+            <div className="sm:col-span-2 pt-6 mt-4 border-t border-[#c9b896]/20">
+              <label className="text-base sm:text-lg font-bold text-[#3d2c1e] mb-4 block">Mode de Pointage</label>
+
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                <Button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, isCoupure: false })}
+                  className={cn(
+                    "h-14 rounded-xl text-base font-bold transition-all border-2",
+                    !formData.isCoupure
+                      ? "bg-[#8b5a2b] text-white border-[#8b5a2b] shadow-lg scale-[1.02]"
+                      : "bg-white text-[#8b5a2b] border-[#c9b896]/30 hover:bg-[#8b5a2b]/5"
+                  )}
+                >
+                  Mode Normal
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, isCoupure: true })}
+                  className={cn(
+                    "h-14 rounded-xl text-base font-bold transition-all border-2",
+                    formData.isCoupure
+                      ? "bg-[#8b5a2b] text-white border-[#8b5a2b] shadow-lg scale-[1.02]"
+                      : "bg-white text-[#8b5a2b] border-[#c9b896]/30 hover:bg-[#8b5a2b]/5"
+                  )}
+                >
+                  Mode Coupure
+                </Button>
+              </div>
+
+              {formData.isCoupure && (
+                <div className="bg-[#8b5a2b]/5 p-6 rounded-2xl border border-[#8b5a2b]/10 animate-in fade-in slide-in-from-top-4 duration-500">
+                  <p className="text-sm font-bold text-[#8b5a2b] mb-4 uppercase tracking-wider">Configuration des 4 pointages</p>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-[#3d2c1e]">Début P1</label>
+                      <Input
+                        type="time"
+                        value={formData.p1_in}
+                        onChange={(e) => setFormData({ ...formData, p1_in: e.target.value })}
+                        className="bg-white border-[#c9b896]/30 h-11 text-base font-medium focus:ring-[#8b5a2b]"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-[#3d2c1e]">Pause</label>
+                      <Input
+                        type="time"
+                        value={formData.p1_out}
+                        onChange={(e) => setFormData({ ...formData, p1_out: e.target.value })}
+                        className="bg-white border-[#c9b896]/30 h-11 text-base font-medium focus:ring-[#8b5a2b]"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-[#3d2c1e]">Retour</label>
+                      <Input
+                        type="time"
+                        value={formData.p2_in}
+                        onChange={(e) => setFormData({ ...formData, p2_in: e.target.value })}
+                        className="bg-white border-[#c9b896]/30 h-11 text-base font-medium focus:ring-[#8b5a2b]"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-[#3d2c1e]">Fin P2</label>
+                      <Input
+                        type="time"
+                        value={formData.p2_out}
+                        onChange={(e) => setFormData({ ...formData, p2_out: e.target.value })}
+                        className="bg-white border-[#c9b896]/30 h-11 text-base font-medium focus:ring-[#8b5a2b]"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

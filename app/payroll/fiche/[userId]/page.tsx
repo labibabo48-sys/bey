@@ -21,9 +21,10 @@ import {
     DialogHeader,
     DialogTitle,
     DialogFooter,
+    DialogDescription,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { ChevronLeft, FileText, Printer, Save, RefreshCw, AlertCircle, TrendingUp, TrendingDown, Wallet, CheckCircle, XCircle, Loader2, RotateCcw } from "lucide-react"
+import { ChevronLeft, FileText, Printer, Save, RefreshCw, AlertCircle, TrendingUp, TrendingDown, Wallet, CheckCircle, XCircle, Loader2, RotateCcw, Clock, Edit2 } from "lucide-react"
 import { useState, useMemo, useEffect } from "react"
 import { gql, useQuery, useMutation } from "@apollo/client"
 import { useParams, useRouter } from "next/navigation"
@@ -42,7 +43,9 @@ const GET_USER_DATA = gql`
       base_salary
       phone
       cin
+      permissions
       nbmonth
+      is_coupure
     }
   }
 `
@@ -63,7 +66,12 @@ const GET_PAYROLL = gql`
       doublage
       clock_in
       clock_out
+      p1_in
+      p1_out
+      p2_in
+      p2_out
       paid
+      salaire_net
     }
   }
 `
@@ -95,6 +103,11 @@ const UPDATE_PAYROLL_RECORD = gql`
       doublage
       clock_in
       clock_out
+      p1_in
+      p1_out
+      p2_in
+      p2_out
+      salaire_net
     }
   }
 `
@@ -148,9 +161,10 @@ export default function UserFichePage() {
     const [updateNbMonth] = useMutation(UPDATE_NB_MONTH)
 
     const [nbMonth, setNbMonth] = useState<number | ''>('')
-
     const [editingId, setEditingId] = useState<string | null>(null)
-    const [showRedirectDialog, setShowRedirectDialog] = useState(false)
+    const [isOverrideDialogOpen, setIsOverrideDialogOpen] = useState(false)
+    const [manualNetValue, setManualNetValue] = useState<string>("")
+
     const [editForm, setEditForm] = useState<any>({
         present: 1,
         acompte: 0,
@@ -160,7 +174,13 @@ export default function UserFichePage() {
         retard: 0,
         mise_a_pied: 0,
         remarque: "",
-        doublage: 0
+        doublage: 0,
+        p1_in: "",
+        p1_out: "",
+        p2_in: "",
+        p2_out: "",
+        salaire_net: 0,
+        isCoupure: false
     })
     const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
     const [isSaving, setIsSaving] = useState(false)
@@ -171,6 +191,10 @@ export default function UserFichePage() {
             setNbMonth(user.nbmonth || getDaysInMonth(new Date(selectedMonth.replace("_", "-") + "-01")))
         }
     }, [user, selectedMonth])
+
+    const handleFieldChange = (field: string, value: any) => {
+        setEditForm((prev: any) => ({ ...prev, [field]: value }))
+    }
 
     const formatDuration = (mins: number) => {
         if (!mins || mins <= 0) return "-"
@@ -197,7 +221,7 @@ export default function UserFichePage() {
         const daysInMonth = getDaysInMonth(monthDate);
         const divisor = Number(nbMonth) || daysInMonth;
 
-        const totalPresentOnWorkDays = payroll.reduce((sum: number, r: any) => sum + (r.present === 1 ? 1 : 0), 0)
+        const totalPresentOnWorkDays = payroll.reduce((sum: number, r: any) => sum + (parseFloat(r.present || 0)), 0)
 
         const baseSalary = user?.base_salary || 0
         const dayValue = baseSalary / divisor
@@ -209,8 +233,6 @@ export default function UserFichePage() {
         const totalAbsentsDisplay = daysInMonth - paidDays;
 
         const totalRetardMins = payroll.reduce((sum: number, r: any) => sum + (r.retard || 0), 0)
-        const retardPenaltyTotal = payroll.reduce((sum: number, r: any) => sum + (r.retard > 30 ? 30 : 0), 0)
-
         const totalAdvances = payroll.reduce((sum: number, r: any) => sum + parseFloat(r.acompte || 0), 0)
         const totalPrimes = payroll.reduce((sum: number, r: any) => sum + parseFloat(r.prime || 0), 0)
         const totalInfractions = payroll.reduce((sum: number, r: any) => sum + parseFloat(r.infraction || 0), 0)
@@ -218,15 +240,16 @@ export default function UserFichePage() {
         const totalDoublages = payroll.reduce((sum: number, r: any) => sum + parseFloat(r.doublage || 0), 0)
 
         const isPaid = payroll.some((r: any) => r.paid === true)
+        const manualNetOverride = payroll.find((r: any) => (r.salaire_net || 0) > 0)?.salaire_net;
 
-        // Net Salary: Presence - Infractions - Advances (EXCLUDES primes/extras/doublages)
-        const netSalary = calculatedSalary - totalInfractions - totalAdvances
+        // Net Salary: Presence - Infractions - Advances
+        let netSalary = calculatedSalary - totalInfractions - totalAdvances
+        if (manualNetOverride) netSalary = manualNetOverride;
 
         return {
             totalDays: totalPresentOnWorkDays,
             totalAbsents: totalAbsentsDisplay,
             totalRetardMins,
-            retardPenaltyTotal,
             calculatedSalary,
             totalAdvances,
             totalPrimes,
@@ -234,14 +257,13 @@ export default function UserFichePage() {
             totalExtras,
             totalDoublages,
             netSalary,
-            isPaid
+            isPaid,
+            isOverridden: !!manualNetOverride
         }
     }, [payroll, user, selectedMonth, nbMonth])
 
     const handleSync = async () => {
         if (stats.isPaid) return;
-
-        // 1. Save the nbMonth (divisor) if it was changed
         if (nbMonth !== '' && nbMonth !== user?.nbmonth) {
             await updateNbMonth({
                 variables: {
@@ -250,8 +272,6 @@ export default function UserFichePage() {
                 }
             })
         }
-
-        // 2. Sync today and yesterday
         await syncAttendance({ variables: { date: format(new Date(), 'yyyy-MM-dd') } })
         await refetchPayroll()
     }
@@ -259,35 +279,17 @@ export default function UserFichePage() {
     const handlePay = async () => {
         if (!userId || paying || unpaying) return
         try {
-            await payUser({
-                variables: {
-                    month: selectedMonth,
-                    userId: String(userId)
-                }
-            })
+            await payUser({ variables: { month: selectedMonth, userId: String(userId) } })
             await refetchPayroll()
-        } catch (err) {
-            console.error("Pay Error:", err)
-        }
+        } catch (err) { console.error("Pay Error:", err) }
     }
 
     const handleUnpay = async () => {
         if (!userId || paying || unpaying) return
         try {
-            await unpayUser({
-                variables: {
-                    month: selectedMonth,
-                    userId: String(userId)
-                }
-            })
+            await unpayUser({ variables: { month: selectedMonth, userId: String(userId) } })
             await refetchPayroll()
-        } catch (err) {
-            console.error("Unpay Error:", err)
-        }
-    }
-
-    const handleNbMonthInputChange = (val: number) => {
-        setNbMonth(val)
+        } catch (err) { console.error("Unpay Error:", err) }
     }
 
     const startEdit = (record: any) => {
@@ -302,13 +304,15 @@ export default function UserFichePage() {
             retard: record.retard || 0,
             mise_a_pied: record.mise_a_pied || 0,
             remarque: record.remarque || "",
-            doublage: record.doublage || 0
+            doublage: record.doublage || 0,
+            p1_in: record.p1_in || "",
+            p1_out: record.p1_out || "",
+            p2_in: record.p2_in || "",
+            p2_out: record.p2_out || "",
+            salaire_net: record.salaire_net || 0,
+            isCoupure: !!(record.p1_in || record.p1_out || record.p2_in || record.p2_out)
         })
         setIsEditDialogOpen(true)
-    }
-
-    const handleFieldChange = (field: string, value: any) => {
-        setEditForm({ ...editForm, [field]: value });
     }
 
     const saveEdit = async () => {
@@ -316,7 +320,7 @@ export default function UserFichePage() {
         setIsSaving(true)
         try {
             const input = {
-                present: parseInt(String(editForm.present)),
+                present: parseFloat(String(editForm.present)),
                 acompte: parseFloat(String(editForm.acompte || 0)),
                 extra: parseFloat(String(editForm.extra || 0)),
                 prime: parseFloat(String(editForm.prime || 0)),
@@ -324,24 +328,60 @@ export default function UserFichePage() {
                 retard: parseInt(String(editForm.retard || 0)),
                 mise_a_pied: parseFloat(String(editForm.mise_a_pied || 0)),
                 doublage: parseFloat(String(editForm.doublage || 0)),
-                remarque: editForm.remarque
+                remarque: editForm.remarque,
+                p1_in: editForm.p1_in || null,
+                p1_out: editForm.p1_out || null,
+                p2_in: editForm.p2_in || null,
+                p2_out: editForm.p2_out || null,
+                salaire_net: parseFloat(String(editForm.salaire_net || 0))
             };
+            await updateRecord({ variables: { month: selectedMonth, id: editingId, input } })
+            setIsEditDialogOpen(false)
+            setEditingId(null)
+            refetchPayroll();
+        } catch (err) {
+            console.error("Update Error:", err)
+        } finally {
+            setIsSaving(false)
+        }
+    }
 
+    const handleOverrideNet = async () => {
+        if (payroll.length === 0) return;
+        const firstId = payroll.find((r: any) => (r.salaire_net || 0) > 0)?.id || payroll[0].id;
+        try {
             await updateRecord({
                 variables: {
                     month: selectedMonth,
-                    id: editingId,
-                    input
+                    id: firstId,
+                    input: { salaire_net: parseFloat(manualNetValue || "0") }
                 }
             })
+            setIsOverrideDialogOpen(false);
+            refetchPayroll();
+        } catch (e) {
+            console.error(e);
+        }
+    }
 
-            setIsEditDialogOpen(false)
-            setEditingId(null)
-        } catch (err) {
-            console.error("Update Error:", err)
-            alert("Erreur lors de l'enregistrement.")
-        } finally {
-            setIsSaving(false)
+    const handleResetNet = async () => {
+        const overriddenRecord = payroll.find((r: any) => (r.salaire_net || 0) > 0);
+        if (!overriddenRecord) {
+            setIsOverrideDialogOpen(false);
+            return;
+        }
+        try {
+            await updateRecord({
+                variables: {
+                    month: selectedMonth,
+                    id: overriddenRecord.id,
+                    input: { salaire_net: 0 }
+                }
+            })
+            setIsOverrideDialogOpen(false);
+            refetchPayroll();
+        } catch (e) {
+            console.error(e);
         }
     }
 
@@ -358,10 +398,11 @@ export default function UserFichePage() {
         return list
     }, [])
 
-    if (!user && !userError) return <div className="p-10 font-bold text-[#8b5a2b]">Chargement des données employé...</div>
-    if (userError) return <div className="p-10 text-red-600 font-bold">Erreur de chargement employé: {userError.message}</div>
-    if (payrollError) return <div className="p-10 text-red-600 font-bold">Erreur de chargement paie: {payrollError.message}</div>
-    if (!user) return <div className="p-10 text-[#8b5a2b]">Employé introuvable (ID: {userId})</div>
+    if (!user && !userError) return <div className="p-10 font-bold text-[#8b5a2b]">Chargement...</div>
+    if (userError) return <div className="p-10 text-red-600 font-bold">Erreur: {userError.message}</div>
+    if (!user) return <div className="p-10 text-[#8b5a2b]">Employé introuvable</div>
+
+    const isCoupureMode = user.is_coupure;
 
     return (
         <div className="flex min-h-screen flex-col bg-[#f8f6f1] lg:flex-row print:block">
@@ -371,357 +412,240 @@ export default function UserFichePage() {
                     @media print {
                         @page {
                             size: A4 portrait;
-                            margin: 0 !important;
+                            margin: 0 !important; /* This removes the default browser header/footer */
                         }
-                        body {
-                            background: white !important;
+                        html, body {
                             margin: 0 !important;
                             padding: 0 !important;
+                            height: auto !important;
+                            background: white !important;
                             overflow: visible !important;
                         }
                         .print-container {
                             width: 100% !important;
-                            padding: 8mm 10mm !important;
-                            margin: 0 !important;
-                            overflow: visible !important;
-                        }
-                        .print-hidden, [class*="print:hidden"] {
-                            display: none !important;
-                        }
-                        main, .print-container, main > div {
-                            width: 100% !important;
-                            display: block !important;
-                            visibility: visible !important;
                             max-width: none !important;
+                            margin: 0 !important;
+                            padding: 5mm 8mm !important; /* Balanced margins */
                             overflow: visible !important;
-                            height: auto !important;
+                            transform: scale(0.98); /* Slightly larger scale since we have more room */
+                            transform-origin: top left;
                         }
                         .card-print {
+                            border: 0.7pt solid #000 !important;
                             box-shadow: none !important;
-                            border: 1px solid #3d2c1e !important;
-                            padding: 3mm !important;
-                            width: 100% !important;
+                            border-radius: 0 !important;
+                            padding: 4mm !important;
+                            margin: 0 !important;
                             height: auto !important;
                             min-height: 0 !important;
-                            display: flex !important;
-                            flex-direction: column !important;
                             overflow: visible !important;
-                            border-radius: 0 !important;
+                            display: block !important;
+                        }
+                        .table-container {
+                            overflow: visible !important;
+                            border: none !important;
+                        }
+                        .print-hidden, .print\:hidden {
+                            display: none !important;
                         }
                         table {
-                            font-size: 10px !important;
+                            font-size: 8pt !important;
+                            border-collapse: collapse !important;
                             width: 100% !important;
                             table-layout: auto !important;
-                            border-collapse: collapse !important;
-                        }
-                        tr {
-                            page-break-inside: avoid !important;
                         }
                         th, td {
-                            padding: 2px 4px !important;
-                            line-height: 1 !important;
-                            border: 1px solid #3d2c1e !important;
+                            padding: 2.5px 4px !important;
+                            line-height: 1.2 !important;
+                            border: 0.7pt solid #000 !important;
+                            overflow: visible !important;
+                            white-space: nowrap !important;
                         }
-                        .signatures {
-                            margin-top: 5mm !important;
-                            padding-top: 2mm !important;
-                            padding-bottom: 2mm !important;
+                        td.italic {
+                            white-space: normal !important;
+                            font-size: 7pt !important;
                         }
                         .summary-section {
-                            margin-top: 3mm !important;
+                            margin-top: 6mm !important;
+                            page-break-inside: avoid !important;
                         }
-                        .overflow-x-auto {
+                        .signatures {
+                            margin-top: 12mm !important;
+                        }
+                        h1, h2, h3, h4, p, span {
+                            color: black !important;
+                        }
+                        * {
                             overflow: visible !important;
+                            -webkit-print-color-adjust: exact !important;
+                            print-color-adjust: exact !important;
                         }
                     }
                 `}</style>
                 <div className="border-b border-[#c9b896] bg-white p-6 sm:p-8 lg:p-10 shadow-sm print:hidden">
                     <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex items-center gap-4">
-                            <Button
-                                variant="ghost"
-                                onClick={() => router.push("/payroll/fiche")}
-                                className="text-[#8b5a2b] hover:bg-[#f8f6f1]"
-                            >
+                            <Button variant="ghost" onClick={() => router.push("/payroll/fiche")} className="text-[#8b5a2b] hover:bg-[#f8f6f1]">
                                 <ChevronLeft className="h-6 w-6" />
                             </Button>
                             <div>
                                 <h1 className="font-[family-name:var(--font-heading)] text-xl sm:text-3xl font-bold text-[#8b5a2b] flex flex-wrap items-center gap-2 sm:gap-3">
                                     Fiche de Paie — {user.username}
-                                    {stats.isPaid && (
-                                        <span className="text-[10px] sm:text-xs bg-emerald-100 text-emerald-700 px-2 sm:px-3 py-1 rounded-full border border-emerald-200 uppercase font-black tracking-widest animate-pulse">
-                                            Payé
-                                        </span>
-                                    )}
+                                    {stats.isPaid && <span className="text-[10px] bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full border border-emerald-200 uppercase font-black tracking-widest">Payé</span>}
                                 </h1>
                                 <p className="text-[#6b5744]">Détails du salaire et présences</p>
                             </div>
                         </div>
-
                         <div className="flex flex-wrap items-center gap-3">
                             <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-                                <SelectTrigger className="w-[150px] sm:w-[200px] border-[#c9b896] bg-[#f8f6f1]">
-                                    <SelectValue placeholder="Choisir le mois" />
+                                <SelectTrigger className="w-[180px] border-[#c9b896] bg-[#f8f6f1]">
+                                    <SelectValue placeholder="Mois" />
                                 </SelectTrigger>
-                                <SelectContent>
-                                    {months.map(m => (
-                                        <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
-                                    ))}
-                                </SelectContent>
+                                <SelectContent>{months.map(m => (<SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>))}</SelectContent>
                             </Select>
-
                             <div className="flex items-center gap-2 bg-[#f8f6f1] border border-[#c9b896] rounded-md px-3 py-1">
-                                <Label htmlFor="nbmonth" className="text-xs font-semibold text-[#8b5a2b] whitespace-nowrap">Diviseur :</Label>
+                                <Label htmlFor="nbmonth" className="text-xs font-semibold text-[#8b5a2b]">Diviseur :</Label>
                                 <Input
                                     id="nbmonth"
                                     type="number"
                                     value={nbMonth}
-                                    onChange={(e) => handleNbMonthInputChange(parseInt(e.target.value) || 0)}
-                                    className="w-16 h-8 border-none bg-transparent focus-visible:ring-0 p-1 text-center font-bold text-[#8b5a2b]"
+                                    onChange={(e) => setNbMonth(parseInt(e.target.value) || 0)}
+                                    className="w-12 h-8 border-none bg-transparent p-0 text-center font-bold text-[#8b5a2b]"
                                 />
-                                <span className="text-xs text-[#6b5744]">jours</span>
                             </div>
-
-                            <Button
-                                onClick={handleSync}
-                                disabled={syncing || stats.isPaid}
-                                className={cn("bg-[#8b5a2b] text-white hover:opacity-90", stats.isPaid && "opacity-50 cursor-not-allowed")}
-                            >
-                                <RefreshCw className={cn("h-5 w-5 mr-2", syncing && "animate-spin")} />
-                                {stats.isPaid ? "Verrouillé" : "Sync"}
+                            <Button onClick={handleSync} disabled={syncing || stats.isPaid} className="bg-[#8b5a2b] text-white">
+                                <RefreshCw className={cn("h-5 w-5 mr-2", syncing && "animate-spin")} /> {stats.isPaid ? "Verrouillé" : "Sync"}
                             </Button>
-
-                            <Button
-                                onClick={stats.isPaid ? handleUnpay : handlePay}
-                                disabled={paying || unpaying}
-                                className={cn(
-                                    "text-white shadow-md transition-all",
-                                    stats.isPaid
-                                        ? "bg-red-600 hover:bg-red-700"
-                                        : "bg-emerald-600 hover:bg-emerald-700"
-                                )}
-                            >
-                                {paying || unpaying ? (
-                                    <Loader2 className="h-5 w-5 animate-spin" />
-                                ) : stats.isPaid ? (
-                                    <>
-                                        <RotateCcw className="h-5 w-5 mr-2" />
-                                        Annuler Paiement
-                                    </>
-                                ) : (
-                                    <>
-                                        <Wallet className="h-5 w-5 mr-2" />
-                                        Payer
-                                    </>
-                                )}
-                            </Button>
-
-                            <Button
-                                onClick={() => {
-                                    const oldTitle = document.title;
-                                    document.title = `${user.username}_Fiche_Paie_${selectedMonth}`;
-                                    window.print();
-                                    document.title = oldTitle;
-                                }}
-                                variant="outline"
-                                className="border-[#c9b896] text-[#8b5a2b]"
-                            >
-                                <Printer className="h-5 w-5 mr-2" />
-                                Imprimer
+                            <Button onClick={() => window.print()} variant="outline" className="border-[#c9b896] text-[#8b5a2b]">
+                                <Printer className="h-5 w-5 mr-2" /> Imprimer
                             </Button>
                         </div>
                     </div>
                 </div>
 
-                <div className="p-6 sm:p-8 lg:p-10 max-w-6xl mx-auto print:p-0 print:max-w-none print:m-0 print-container">
-                    {/* Printable Sheet */}
-                    <Card className="bg-white border-[#c9b896] shadow-xl p-8 sm:p-12 print:p-2 print:border-px print:border-[#3d2c1e] print:shadow-none min-h-[900px] print:min-h-0 print:w-full print:rounded-none card-print relative overflow-hidden">
-                        {stats.isPaid && (
-                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0 overflow-hidden">
-                                <span className="text-[200px] sm:text-[300px] font-black text-gray-300 uppercase -rotate-45 select-none print:text-gray-300 whitespace-nowrap opacity-40">
-                                    PAYÉ
-                                </span>
-                            </div>
-                        )}
-                        <div className="relative z-10">
-                            {/* Header section identical to photo */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 border border-[#3d2c1e] print:text-[12px] print:p-0">
-                                <div className="p-4 print:p-2 border-r sm:border-r border-b border-[#3d2c1e] space-y-1">
-                                    <p className="text-sm print:text-[11.5px]"><strong>Nom:</strong> {user.username.split(' ')[1] || ""}</p>
-                                    <p className="text-sm print:text-[11.5px]"><strong>Prénom:</strong> {user.username.split(' ')[0] || ""}</p>
-                                    <p className="text-sm print:text-[11.5px]"><strong>Poste:</strong> {user.departement}</p>
-                                    <p className="text-sm print:text-[11.5px]"><strong>Salaire Base:</strong> {user.base_salary} DT</p>
+                <div className="p-6 sm:p-8 lg:p-10 max-w-7xl mx-auto print:p-0 print:max-w-none print:m-0 print-container">
+                    <Card className="bg-white border-[#3d2c1e] shadow-xl p-8 print:p-2 print:border-px print:shadow-none card-print relative min-h-[900px] print:min-h-0">
+                        <div className="relative z-10 flex flex-col h-full">
+                            <div className="grid grid-cols-2 border border-[#3d2c1e] print:text-[9.5px] mb-2">
+                                <div className="p-4 print:p-2 border-r border-[#3d2c1e] space-y-1">
+                                    <p><strong>Nom:</strong> {user.username.split(' ').slice(1).join(' ') || user.username}</p>
+                                    <p><strong>Prénom:</strong> {user.username.split(' ')[0]}</p>
+                                    <p><strong>Poste:</strong> {user.departement}</p>
+                                    <p><strong>Salaire Base:</strong> {user.base_salary} DT</p>
                                 </div>
-                                <div className="p-4 print:p-2 border-b border-[#3d2c1e] space-y-1">
-                                    <p className="text-sm print:text-[11.5px]"><strong>Tél:</strong> {user.phone || "-"}</p>
-                                    <p className="text-sm print:text-[11.5px]"><strong>CIN:</strong> {user.cin || "-"}</p>
-                                    <p className="text-sm print:text-[11.5px] text-gray-500">Mois: {months.find(m => m.value === selectedMonth)?.label}</p>
-                                </div>
-                            </div>
-                            {/* Main Table */}
-                            <div className="mt-2 print:mt-2">
-                                {/* Unified Table View - Visible on all devices with horizontal scroll */}
-                                <div className="block print:block overflow-x-auto">
-                                    <table className="w-full border-collapse border border-[#3d2c1e] print:text-[10px] print:leading-none min-w-[800px] md:min-w-0 print:min-w-0 print:table-fixed">
-                                        <thead>
-                                            <tr className="bg-[#f8f6f1]/50">
-                                                <th className="border border-[#3d2c1e] p-2 print:p-1 text-xs print:text-[8px] font-bold uppercase text-left w-24 print:w-[8%]">Date</th>
-                                                <th className="border border-[#3d2c1e] p-2 print:p-1 text-xs print:text-[8px] font-bold uppercase text-left w-24 print:w-[8%]">Jour</th>
-                                                <th className="border border-[#3d2c1e] p-2 print:p-1 text-xs print:text-[8px] font-bold uppercase text-center w-20 print:w-[5%]">Prés.</th>
-                                                <th className="border border-[#3d2c1e] p-2 print:p-1 text-xs print:text-[8px] font-bold uppercase text-center w-20 print:w-[5%]">Ret.</th>
-                                                <th className="border border-[#3d2c1e] p-2 print:p-1 text-xs print:text-[8px] font-bold uppercase text-center w-20 print:w-[7%]">Entrée</th>
-                                                <th className="border border-[#3d2c1e] p-2 print:p-1 text-xs print:text-[8px] font-bold uppercase text-center w-20 print:w-[7%]">Sortie</th>
-                                                <th className="border border-[#3d2c1e] p-2 print:p-1 text-xs print:text-[8px] font-bold uppercase text-right w-24 print:w-[7%]">Acompte</th>
-                                                <th className="border border-[#3d2c1e] p-2 print:p-1 text-xs print:text-[8px] font-bold uppercase text-right w-24 print:w-[7%]">Extra</th>
-                                                <th className="border border-[#3d2c1e] p-2 print:p-1 text-xs print:text-[8px] font-bold uppercase text-right w-20 print:w-[6%]">Dbl</th>
-                                                <th className="border border-[#3d2c1e] p-2 print:p-1 text-xs print:text-[8px] font-bold uppercase text-right w-24 print:w-[7%]">Prime</th>
-                                                <th className="border border-[#3d2c1e] p-2 print:p-1 text-xs print:text-[8px] font-bold uppercase text-right w-24 print:w-[7%]">Infract.</th>
-                                                <th className="border border-[#3d2c1e] p-2 print:p-1 text-xs print:text-[8px] font-bold uppercase text-left print:w-[26%]">Remarque</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {payroll.map((record: any) => {
-                                                const date = new Date(record.date)
-                                                const dayName = format(date, "eeee", { locale: fr })
-                                                const isWeekend = date.getDay() === 0 // Dimanche
-
-                                                return (
-                                                    <tr
-                                                        key={record.id}
-                                                        onClick={() => !stats.isPaid && startEdit(record)}
-                                                        className={cn(
-                                                            "transition-colors group",
-                                                            isWeekend && "bg-gray-50",
-                                                            !stats.isPaid ? "hover:bg-[#f8f6f1]/30 cursor-pointer" : "cursor-default"
-                                                        )}
-                                                    >
-                                                        <td className="border border-[#3d2c1e] p-2 print:p-0.5 text-sm print:text-[9px] group-hover:bg-[#8b5a2b]/5 transition-colors">{format(date, "dd/MM/yyyy")}</td>
-                                                        <td className="border border-[#3d2c1e] p-2 print:p-0.5 text-sm print:text-[9px] capitalize group-hover:bg-[#8b5a2b]/5 transition-colors">{dayName}</td>
-                                                        <td className="border border-[#3d2c1e] p-2 print:p-0.5 text-sm print:text-[9px] text-center font-bold group-hover:bg-[#8b5a2b]/5 transition-colors">
-                                                            {record.present === 1 ? "1" : record.present === 0 ? "0" : ""}
-                                                        </td>
-                                                        <td className="border border-[#3d2c1e] p-2 print:p-0.5 text-sm print:text-[9px] text-center text-orange-600 group-hover:bg-[#8b5a2b]/5 transition-colors">
-                                                            {record.retard > 0 ? formatDuration(record.retard) : "-"}
-                                                        </td>
-                                                        <td className="border border-[#3d2c1e] p-2 print:p-0.5 text-sm print:text-[9px] text-center font-mono group-hover:bg-[#8b5a2b]/5 transition-colors">
-                                                            {record.clock_in || "-"}
-                                                        </td>
-                                                        <td className="border border-[#3d2c1e] p-2 print:p-0.5 text-sm print:text-[9px] text-center font-mono group-hover:bg-[#8b5a2b]/5 transition-colors">
-                                                            {record.clock_out || "-"}
-                                                        </td>
-                                                        <td className="border border-[#3d2c1e] p-2 print:p-0.5 text-sm print:text-[9px] text-right group-hover:bg-[#8b5a2b]/5 transition-colors">
-                                                            {record.acompte > 0 ? `${record.acompte} DT` : ""}
-                                                        </td>
-                                                        <td className="border border-[#3d2c1e] p-2 print:p-0.5 text-sm print:text-[9px] text-right text-emerald-600 group-hover:bg-[#8b5a2b]/5 transition-colors">
-                                                            {record.extra > 0 ? `${record.extra} DT` : ""}
-                                                        </td>
-                                                        <td className="border border-[#3d2c1e] p-2 print:p-0.5 text-sm print:text-[9px] text-right text-cyan-600 group-hover:bg-[#8b5a2b]/5 transition-colors">
-                                                            {record.doublage > 0 ? `${record.doublage} DT` : ""}
-                                                        </td>
-                                                        <td className="border border-[#3d2c1e] p-2 print:p-0.5 text-sm print:text-[9px] text-right text-blue-600 group-hover:bg-[#8b5a2b]/5 transition-colors">
-                                                            {record.prime > 0 ? `${record.prime} DT` : "-"}
-                                                        </td>
-                                                        <td className="border border-[#3d2c1e] p-2 print:p-0.5 text-sm print:text-[9px] text-right text-red-600 group-hover:bg-[#8b5a2b]/5 transition-colors">
-                                                            {record.infraction > 0 ? `${record.infraction} DT` : "-"}
-                                                        </td>
-                                                        <td className="border border-[#3d2c1e] p-2 print:p-0.5 text-sm print:text-[9px] italic group-hover:bg-[#8b5a2b]/5 transition-colors whitespace-nowrap print:whitespace-normal">
-                                                            {record.remarque || (record.present === 0 ? "ABSENT" : "")}
-                                                        </td>
-                                                    </tr>
-                                                )
-                                            })}
-                                        </tbody>
-                                    </table>
+                                <div className="p-4 print:p-2 space-y-1">
+                                    <p><strong>Tél:</strong> {user.phone || "-"}</p>
+                                    <p><strong>CIN:</strong> {user.cin || "-"}</p>
+                                    <p><strong>Mois:</strong> {months.find(m => m.value === selectedMonth)?.label}</p>
                                 </div>
                             </div>
 
-                            {/* Footer Summaries - Redesigned as a single cohesive block */}
-                            <div className="mt-2 print:mt-2 grid grid-cols-1 md:grid-cols-2 gap-4 print:grid-cols-2 print:gap-x-4 summary-section">
-                                {/* Column 1: Presence & Base Stats */}
+                            <div className="table-container overflow-x-auto print:overflow-visible">
+                                <table className="w-full border-collapse border border-[#3d2c1e] print:text-[7pt] print:table-auto">
+                                    <thead>
+                                        <tr className="bg-[#f8f6f1]">
+                                            <th className="border border-[#3d2c1e] p-2 print:p-0.5 text-xs font-bold uppercase text-left w-24 print:w-[10%]">Date</th>
+                                            <th className="border border-[#3d2c1e] p-2 print:p-0.5 text-xs font-bold uppercase text-left w-20 print:w-[8%]">Jour</th>
+                                            <th className="border border-[#3d2c1e] p-2 print:p-0.5 text-xs font-bold uppercase text-center w-12 print:w-[4%]">PRÉS.</th>
+                                            <th className="border border-[#3d2c1e] p-2 print:p-0.5 text-xs font-bold uppercase text-center w-12 print:w-[5%]">RET.</th>
+                                            {!isCoupureMode ? (
+                                                <>
+                                                    <th className="border border-[#3d2c1e] p-2 print:p-0.5 text-xs font-bold uppercase text-center w-16 print:w-[8%]">ENTRÉE</th>
+                                                    <th className="border border-[#3d2c1e] p-2 print:p-0.5 text-xs font-bold uppercase text-center w-16 print:w-[8%]">SORTIE</th>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <th className="border border-[#3d2c1e] p-1 print:p-0.5 text-[8px] uppercase text-center print:w-[6%]">DÉB P1</th>
+                                                    <th className="border border-[#3d2c1e] p-1 print:p-0.5 text-[8px] uppercase text-center print:w-[6%]">FIN P1</th>
+                                                    <th className="border border-[#3d2c1e] p-1 print:p-0.5 text-[8px] uppercase text-center print:w-[6%]">DÉB P2</th>
+                                                    <th className="border border-[#3d2c1e] p-1 print:p-0.5 text-[8px] uppercase text-center print:w-[6%]">FIN P2</th>
+                                                </>
+                                            )}
+                                            <th className="border border-[#3d2c1e] p-2 print:p-0.5 text-xs font-bold uppercase text-right w-16 print:w-[6%]">ACOMPTE</th>
+                                            <th className="border border-[#3d2c1e] p-2 print:p-0.5 text-xs font-bold uppercase text-right w-16 print:w-[6%]">EXTRA</th>
+                                            <th className="border border-[#3d2c1e] p-2 print:p-0.5 text-xs font-bold uppercase text-right w-12 print:w-[4%]">DBL</th>
+                                            <th className="border border-[#3d2c1e] p-2 print:p-0.5 text-xs font-bold uppercase text-right w-16 print:w-[6%]">PRIME</th>
+                                            <th className="border border-[#3d2c1e] p-2 print:p-0.5 text-xs font-bold uppercase text-right w-16 print:w-[6%]">INFRACT.</th>
+                                            <th className="border border-[#3d2c1e] p-2 print:p-0.5 text-xs font-bold uppercase text-left print:w-[25%]">REMARQUE</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {payroll.map((r: any) => {
+                                            const date = new Date(r.date);
+                                            return (
+                                                <tr key={r.id} onClick={() => !stats.isPaid && startEdit(r)} className="hover:bg-gray-50 cursor-pointer print:hover:bg-transparent">
+                                                    <td className="border border-[#3d2c1e] p-2 print:p-0.5 text-xs print:text-[7pt] text-center">{format(date, "dd/MM/yyyy")}</td>
+                                                    <td className="border border-[#3d2c1e] p-2 print:p-0.5 text-xs print:text-[7pt] capitalize">{format(date, "eeee", { locale: fr })}</td>
+                                                    <td className="border border-[#3d2c1e] p-2 print:p-0.5 text-xs print:text-[7pt] text-center font-bold">{parseFloat(r.present || 0)}</td>
+                                                    <td className="border border-[#3d2c1e] p-2 print:p-0.5 text-xs print:text-[7pt] text-center text-red-600 font-bold">{r.retard > 0 ? formatDuration(r.retard) : "-"}</td>
+                                                    {!isCoupureMode ? (
+                                                        <>
+                                                            <td className="border border-[#3d2c1e] p-2 print:p-0.5 text-xs print:text-[7pt] text-center font-mono">{r.clock_in || "-"}</td>
+                                                            <td className="border border-[#3d2c1e] p-2 print:p-0.5 text-xs print:text-[7pt] text-center font-mono">{r.clock_out || "-"}</td>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <td className="border border-[#3d2c1e] p-1 print:p-0.5 text-[8px] print:text-[6.5pt] text-center font-mono">{r.p1_in || "-"}</td>
+                                                            <td className="border border-[#3d2c1e] p-1 print:p-0.5 text-[8px] print:text-[6.5pt] text-center font-mono">{r.p1_out || "-"}</td>
+                                                            <td className="border border-[#3d2c1e] p-1 print:p-0.5 text-[8px] print:text-[6.5pt] text-center font-mono">{r.p2_in || "-"}</td>
+                                                            <td className="border border-[#3d2c1e] p-1 print:p-0.5 text-[8px] print:text-[6.5pt] text-center font-mono">{r.p2_out || "-"}</td>
+                                                        </>
+                                                    )}
+                                                    <td className="border border-[#3d2c1e] p-2 print:p-0.5 text-xs print:text-[7pt] text-right">{r.acompte > 0 ? `${r.acompte}` : ""}</td>
+                                                    <td className="border border-[#3d2c1e] p-2 print:p-0.5 text-xs print:text-[7pt] text-right text-emerald-600">{r.extra > 0 ? `${r.extra}` : ""}</td>
+                                                    <td className="border border-[#3d2c1e] p-2 print:p-0.5 text-xs print:text-[7pt] text-right text-cyan-600 font-bold">{r.doublage > 0 ? `${r.doublage}` : ""}</td>
+                                                    <td className="border border-[#3d2c1e] p-2 print:p-0.5 text-xs print:text-[7pt] text-right text-blue-600">{r.prime > 0 ? `${r.prime}` : ""}</td>
+                                                    <td className="border border-[#3d2c1e] p-2 print:p-0.5 text-xs print:text-[7pt] text-right text-red-600 font-bold">{r.infraction > 0 ? `${r.infraction}` : ""}</td>
+                                                    <td className="border border-[#3d2c1e] p-2 print:p-0.5 text-xs print:text-[6.5pt] italic">{r.remarque || (r.present === 0 ? "ABSENT" : "")}</td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div className="mt-2 grid grid-cols-2 gap-4 summary-section print:text-[8pt]">
                                 <div className="space-y-2">
-                                    <table className="w-full border-collapse border border-[#3d2c1e] print:text-[11.5px]">
-                                        <thead>
-                                            <tr className="bg-[#f8f6f1]">
-                                                <th colSpan={2} className="border border-[#3d2c1e] p-1 print:p-0.5 font-black uppercase text-center text-[#8b5a2b]">Statistiques & Présence</th>
-                                            </tr>
-                                        </thead>
+                                    <table className="w-full border-collapse border border-[#3d2c1e]">
+                                        <thead><tr className="bg-[#f8f6f1]"><th colSpan={2} className="border border-[#3d2c1e] p-1 uppercase text-center font-black">Statistiques & Présence</th></tr></thead>
                                         <tbody>
-                                            <tr>
-                                                <td className="border border-[#3d2c1e] p-2 print:p-0.5 font-bold">Total Jours Travail</td>
-                                                <td className="border border-[#3d2c1e] p-2 print:p-0.5 text-right font-black">{stats.totalDays}</td>
-                                            </tr>
-                                            <tr>
-                                                <td className="border border-[#3d2c1e] p-2 print:p-0.5 font-bold">Total Jours Absence</td>
-                                                <td className="border border-[#3d2c1e] p-2 print:p-0.5 text-right font-black text-red-600">{stats.totalAbsents}</td>
-                                            </tr>
-                                            <tr>
-                                                <td className="border border-[#3d2c1e] p-2 print:p-0.5 font-bold">Total Retards</td>
-                                                <td className="border border-[#3d2c1e] p-2 print:p-0.5 text-right font-black">{formatDuration(stats.totalRetardMins)}</td>
-                                            </tr>
-                                            <tr className="bg-[#f8f6f1]/30">
-                                                <td className="border border-[#3d2c1e] p-2 print:p-0.5 font-bold text-[#8b5a2b]">Salaire (Présence)</td>
-                                                <td className="border border-[#3d2c1e] p-2 print:p-0.5 text-right font-black text-[#8b5a2b]">
-                                                    {stats.calculatedSalary.toLocaleString('fr-FR', { minimumFractionDigits: 1 })} DT
-                                                </td>
-                                            </tr>
+                                            <tr><td className="border border-[#3d2c1e] p-1.5 print:p-0.5 font-bold">Total Jours Travail</td><td className="border border-[#3d2c1e] p-1.5 print:p-0.5 text-right font-black">{stats.totalDays}</td></tr>
+                                            <tr><td className="border border-[#3d2c1e] p-1.5 print:p-0.5 font-bold">Total Jours Absence</td><td className="border border-[#3d2c1e] p-1.5 print:p-0.5 text-right font-black text-red-600">{stats.totalAbsents}</td></tr>
+                                            <tr><td className="border border-[#3d2c1e] p-1.5 print:p-0.5 font-bold">Total Retards</td><td className="border border-[#3d2c1e] p-1.5 print:p-0.5 text-right font-black">{formatDuration(stats.totalRetardMins)}</td></tr>
+                                            <tr className="bg-gray-50"><td className="border border-[#3d2c1e] p-1.5 print:p-0.5 font-black uppercase text-[#8b5a2b]">Salaire (Présence)</td><td className="border border-[#3d2c1e] p-1.5 print:p-0.5 text-right font-black text-[#8b5a2b]">{stats.calculatedSalary.toLocaleString('fr-FR', { minimumFractionDigits: 3 })} DT</td></tr>
                                         </tbody>
                                     </table>
 
-                                    {/* Primes & Extras Box (Separate because they are separately paid) */}
-                                    <div className="p-2 border-2 border-dashed border-[#8b5a2b]/30 rounded-xl bg-[#f8f6f1]/20 print:p-1 print:border-px space-y-0.5">
-                                        <h4 className="text-[9px] print:text-[8px] font-black uppercase text-[#8b5a2b]">Gains Hors Salaire (Espèces)</h4>
-                                        <div className="flex justify-between items-center text-xs print:text-[8.5px]">
-                                            <span className="font-medium text-blue-700">Total Primes</span>
-                                            <span className="font-black text-blue-700">{stats.totalPrimes.toLocaleString('fr-FR', { minimumFractionDigits: 1 })} DT</span>
-                                        </div>
-                                        <div className="flex justify-between items-center text-xs print:text-[8.5px]">
-                                            <span className="font-medium text-emerald-700">Total Extras</span>
-                                            <span className="font-black text-emerald-700">{stats.totalExtras.toLocaleString('fr-FR', { minimumFractionDigits: 1 })} DT</span>
-                                        </div>
-                                        <div className="flex justify-between items-center text-xs print:text-[8.5px]">
-                                            <span className="font-medium text-cyan-700">Total Doublages (Espèces)</span>
-                                            <span className="font-black text-cyan-700">{stats.totalDoublages.toLocaleString('fr-FR', { minimumFractionDigits: 1 })} DT</span>
-                                        </div>
+                                    <div className="p-2 border border-dashed border-[#8b5a2b]/30 rounded-lg space-y-0.5">
+                                        <h4 className="text-[9px] font-black uppercase text-[#8b5a2b]">Gains Hors Salaire (Espèces)</h4>
+                                        <div className="flex justify-between text-xs print:text-[8.5px] font-bold text-purple-700"><span>Total Primes</span><span>{stats.totalPrimes.toLocaleString('fr-FR', { minimumFractionDigits: 1 })} DT</span></div>
+                                        <div className="flex justify-between text-xs print:text-[8.5px] font-bold text-emerald-700"><span>Total Extras</span><span>{stats.totalExtras.toLocaleString('fr-FR', { minimumFractionDigits: 1 })} DT</span></div>
+                                        <div className="flex justify-between text-xs print:text-[8.5px] font-black text-blue-700"><span>Total Doublages (Espèces)</span><span>{stats.totalDoublages.toLocaleString('fr-FR', { minimumFractionDigits: 1 })} DT</span></div>
                                     </div>
                                 </div>
 
-                                {/* Column 2: Deductions & Final Total */}
-                                <div className="space-y-2">
-                                    <table className="w-full border-collapse border border-[#3d2c1e] print:text-[11.5px]">
-                                        <thead>
-                                            <tr className="bg-[#f8f6f1]">
-                                                <th colSpan={2} className="border border-[#3d2c1e] p-1 print:p-0.5 font-black uppercase text-center text-red-700">Déductions & Avances</th>
-                                            </tr>
-                                        </thead>
+                                <div className="space-y-4">
+                                    <table className="w-full border-collapse border border-[#3d2c1e]">
+                                        <thead><tr className="bg-[#f8f6f1]"><th colSpan={2} className="border border-[#3d2c1e] p-1 uppercase text-center text-red-700 font-black">Déductions & Avances</th></tr></thead>
                                         <tbody>
-                                            <tr>
-                                                <td className="border border-[#3d2c1e] p-2 print:p-0.5 font-bold">Avances (Acomptes)</td>
-                                                <td className="border border-[#3d2c1e] p-2 print:p-0.5 text-right font-black text-red-600">-{stats.totalAdvances.toLocaleString('fr-FR', { minimumFractionDigits: 1 })} DT</td>
-                                            </tr>
-                                            <tr>
-                                                <td className="border border-[#3d2c1e] p-2 print:p-0.5 font-bold">Infractions (Automatiques + Manuelles)</td>
-                                                <td className="border border-[#3d2c1e] p-2 print:p-0.5 text-right font-black text-red-600">-{stats.totalInfractions.toLocaleString('fr-FR', { minimumFractionDigits: 1 })} DT</td>
-                                            </tr>
-                                            <tr className="bg-[#8b5a2b] text-white print:h-10">
-                                                <td className="border border-[#3d2c1e] p-2 print:p-1 text-sm font-black uppercase">Net à Payer</td>
+                                            <tr><td className="border border-[#3d2c1e] p-1.5 print:p-0.5 font-bold">Avances (Acomptes)</td><td className="border border-[#3d2c1e] p-1.5 print:p-0.5 text-right font-black text-red-600">-{stats.totalAdvances.toLocaleString('fr-FR', { minimumFractionDigits: 1 })} DT</td></tr>
+                                            <tr><td className="border border-[#3d2c1e] p-1.5 print:p-0.5 font-bold">Infractions</td><td className="border border-[#3d2c1e] p-1.5 print:p-0.5 text-right font-black text-red-600">-{stats.totalInfractions.toLocaleString('fr-FR', { minimumFractionDigits: 1 })} DT</td></tr>
+                                            <tr className="bg-[#8b5a2b] text-white">
+                                                <td className="border border-[#3d2c1e] p-2 print:p-1 text-sm font-black uppercase flex items-center gap-2">
+                                                    Net à Payer
+                                                    {!stats.isPaid && <Edit2 className="h-3 w-3 cursor-pointer hover:text-white/80 print:hidden" onClick={() => { setManualNetValue(stats.netSalary.toString()); setIsOverrideDialogOpen(true); }} />}
+                                                </td>
                                                 <td className="border border-[#3d2c1e] p-2 print:p-1 text-lg print:text-base text-right font-black">
-                                                    {stats.netSalary.toLocaleString('fr-FR', { minimumFractionDigits: 1 })} DT
+                                                    {stats.netSalary.toLocaleString('fr-FR', { minimumFractionDigits: 3 })} DT
                                                 </td>
                                             </tr>
                                         </tbody>
                                     </table>
-                                </div>
-                            </div>
 
-                            {/* Signature areas */}
-                            <div className="mt-4 print:mt-2 flex justify-between px-10 signatures">
-                                <div className="text-center">
-                                    <p className="font-bold underline text-xs print:text-[10px]">Signature Employeur</p>
-                                    <div className="h-6 print:h-6"></div>
-                                </div>
-                                <div className="text-center">
-                                    <p className="font-bold underline text-xs print:text-[10px]">Signature Employé</p>
-                                    <div className="h-6 print:h-6"></div>
+                                    <div className="mt-10 flex justify-between px-6 print:mt-6 print:px-2">
+                                        <div className="text-center font-bold underline text-xs print:text-[9.5px]">Signature Employeur</div>
+                                        <div className="text-center font-bold underline text-xs print:text-[9.5px]">Signature Employé</div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -729,134 +653,156 @@ export default function UserFichePage() {
                 </div>
 
                 <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-                    <DialogContent className="bg-white border-[#c9b896] sm:max-w-[500px] rounded-3xl p-8 shadow-2xl overflow-hidden">
-                        <DialogHeader>
-                            <DialogTitle className="text-2xl font-black text-[#8b5a2b] flex items-center gap-3">
-                                <FileText className="h-7 w-7" /> Modifier la journée
-                            </DialogTitle>
-                            <p className="text-sm font-medium text-[#6b5744] opacity-70">Ajustement manuel du relevé</p>
-                        </DialogHeader>
-
-                        <div className="grid grid-cols-2 gap-5 mt-6 py-2">
-                            <div className="space-y-2 col-span-2">
-                                <Label className="text-[10px] font-black uppercase text-[#8b5a2b] ml-1">Statut de Présence</Label>
-                                <div className="flex bg-[#f8f6f1] p-1.5 rounded-2xl gap-2 border border-[#c9b896]/30">
-                                    <button
-                                        onClick={() => handleFieldChange('present', 1)}
-                                        className={cn(
-                                            "flex-1 py-2.5 rounded-xl text-[11px] font-black uppercase transition-all flex items-center justify-center gap-2",
-                                            editForm.present === 1 ? "bg-emerald-600 text-white shadow-lg scale-[1.02]" : "text-[#6b5744] hover:bg-white"
-                                        )}
-                                    ><CheckCircle className="h-4 w-4" /> Présent</button>
-                                    <button
-                                        onClick={() => handleFieldChange('present', 0)}
-                                        className={cn(
-                                            "flex-1 py-2.5 rounded-xl text-[11px] font-black uppercase transition-all flex items-center justify-center gap-2",
-                                            editForm.present === 0 ? "bg-red-600 text-white shadow-lg scale-[1.02]" : "text-[#6b5744] hover:bg-white"
-                                        )}
-                                    ><XCircle className="h-4 w-4" /> Absent</button>
+                    <DialogContent className="bg-white sm:max-w-[500px] w-[95vw] rounded-[2rem] p-0 overflow-hidden border-none shadow-2xl max-h-[90vh] flex flex-col">
+                        <div className="p-6 sm:p-8 flex-1 overflow-y-auto custom-scrollbar space-y-6">
+                            <div className="flex items-center gap-4">
+                                <div className="bg-[#8b5a2b]/10 p-2.5 rounded-2xl shrink-0">
+                                    <FileText className="h-6 w-6 text-[#8b5a2b]" />
+                                </div>
+                                <div>
+                                    <DialogTitle className="text-2xl font-bold text-[#8b5a2b] tracking-tight">Modifier la journée</DialogTitle>
+                                    <DialogDescription className="text-sm text-[#8b5a2b]/60 font-medium">Ajustement manuel du relevé</DialogDescription>
                                 </div>
                             </div>
 
-                            <div className="space-y-2">
-                                <Label className="text-[10px] font-black uppercase text-[#8b5a2b] ml-1">Retard (Min)</Label>
-                                <Input
-                                    type="number"
-                                    value={editForm.retard}
-                                    onChange={e => handleFieldChange('retard', e.target.value)}
-                                    className="h-12 rounded-2xl border-[#c9b896] bg-[#f8f6f1]/50 font-bold focus:bg-white transition-all"
-                                />
-                            </div>
+                            <div className="space-y-5">
+                                <section>
+                                    <Label className="text-[10px] font-black uppercase tracking-[0.15em] text-[#8b5a2b] mb-3 block ml-1">Statut de Présence</Label>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <Button
+                                            onClick={() => handleFieldChange('present', 1)}
+                                            variant="outline"
+                                            className={cn(
+                                                "h-12 rounded-full border-2 transition-all gap-2 font-bold text-[13px]",
+                                                editForm.present === 1
+                                                    ? "bg-emerald-600 border-emerald-600 text-white shadow-lg shadow-emerald-200"
+                                                    : "bg-[#fdfbf7] border-[#d7cbb5] text-[#8b5a2b] hover:bg-emerald-50"
+                                            )}
+                                        >
+                                            <CheckCircle className="h-4 w-4" />
+                                            PRÉSENT
+                                        </Button>
+                                        <Button
+                                            onClick={() => handleFieldChange('present', 0)}
+                                            variant="outline"
+                                            className={cn(
+                                                "h-12 rounded-full border-2 transition-all gap-2 font-bold text-[13px]",
+                                                editForm.present === 0
+                                                    ? "bg-[#ff0000] border-[#ff0000] text-white shadow-lg shadow-red-200"
+                                                    : "bg-[#fdfbf7] border-[#d7cbb5] text-red-600 hover:bg-red-50"
+                                            )}
+                                        >
+                                            <XCircle className="h-4 w-4" />
+                                            ABSENT
+                                        </Button>
+                                    </div>
+                                </section>
 
-                            <div className="space-y-2">
-                                <Label className="text-[10px] font-black uppercase text-[#8b5a2b] ml-1">Mise à pied (Jours)</Label>
-                                <Input
-                                    type="number"
-                                    value={editForm.mise_a_pied}
-                                    onChange={e => handleFieldChange('mise_a_pied', e.target.value)}
-                                    className="h-12 rounded-2xl border-[#c9b896] bg-[#f8f6f1]/50 font-bold focus:bg-white transition-all text-red-600"
-                                />
-                            </div>
+                                <div className="grid grid-cols-2 gap-x-4 gap-y-4">
+                                    <div className="space-y-1.5">
+                                        <Label className="text-[10px] font-black uppercase tracking-[0.1em] text-[#8b5a2b] ml-1">Retard (Min)</Label>
+                                        <Input type="number" value={editForm.retard} onChange={e => handleFieldChange('retard', e.target.value)} className="h-11 rounded-2xl border-[#d7cbb5] bg-[#fdfbf7]/50 focus-visible:ring-[#8b5a2b] font-bold text-[#8b5a2b]" />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label className="text-[10px] font-black uppercase tracking-[0.1em] text-[#8b5a2b] ml-1">Mise à pied (Jours)</Label>
+                                        <Input type="number" value={editForm.mise_a_pied} onChange={e => handleFieldChange('mise_a_pied', e.target.value)} className="h-11 rounded-2xl border-[#d7cbb5] bg-[#fdfbf7]/50 focus-visible:ring-[#8b5a2b] text-red-600 font-bold" />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label className="text-[10px] font-black uppercase tracking-[0.1em] text-[#8b5a2b] ml-1">Prime (DT)</Label>
+                                        <Input type="number" value={editForm.prime} onChange={e => handleFieldChange('prime', e.target.value)} className="h-11 rounded-2xl border-[#d7cbb5] bg-blue-50/20 focus-visible:ring-[#8b5a2b] text-blue-700 font-bold" />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label className="text-[10px] font-black uppercase tracking-[0.1em] text-[#8b5a2b] ml-1">Infraction (DT)</Label>
+                                        <Input type="number" value={editForm.infraction} onChange={e => handleFieldChange('infraction', e.target.value)} className="h-11 rounded-2xl border-[#d7cbb5] bg-red-50/20 focus-visible:ring-[#8b5a2b] text-red-600 font-bold" />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label className="text-[10px] font-black uppercase tracking-[0.1em] text-[#8b5a2b] ml-1">Acompte (DT)</Label>
+                                        <Input type="number" value={editForm.acompte} onChange={e => handleFieldChange('acompte', e.target.value)} className="h-11 rounded-2xl border-[#d7cbb5] bg-[#fdfbf7]/50 focus-visible:ring-[#8b5a2b] font-bold" />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label className="text-[10px] font-black uppercase tracking-[0.1em] text-[#8b5a2b] ml-1">Extra (DT)</Label>
+                                        <Input type="number" value={editForm.extra} onChange={e => handleFieldChange('extra', e.target.value)} className="h-11 rounded-2xl border-[#d7cbb5] bg-emerald-50/20 focus-visible:ring-[#8b5a2b] text-emerald-700 font-bold" />
+                                    </div>
+                                    <div className="col-span-2 space-y-1.5">
+                                        <Label className="text-[10px] font-black uppercase tracking-[0.1em] text-[#8b5a2b] ml-1">Doublage (DT)</Label>
+                                        <Input type="number" value={editForm.doublage} onChange={e => handleFieldChange('doublage', e.target.value)} className="h-11 rounded-2xl border-[#d7cbb5] bg-cyan-50/20 focus-visible:ring-[#8b5a2b] text-cyan-700 font-bold" />
+                                    </div>
 
-                            <div className="space-y-2">
-                                <Label className="text-[10px] font-black uppercase text-[#8b5a2b] ml-1">Prime (DT)</Label>
-                                <Input
-                                    type="number"
-                                    value={editForm.prime}
-                                    onChange={e => handleFieldChange('prime', e.target.value)}
-                                    className="h-12 rounded-2xl border-[#c9b896] bg-blue-50/50 font-bold focus:bg-white transition-all text-blue-700"
-                                />
-                            </div>
+                                    {isCoupureMode && (
+                                        <div className="col-span-2 grid grid-cols-4 gap-2 bg-[#fdfbf7] p-4 rounded-[1.5rem] border border-[#d7cbb5]/50">
+                                            <div className="space-y-1"><Label className="text-[8px] font-black uppercase text-[#8b5a2b]">P1 In</Label><Input type="time" value={editForm.p1_in} onChange={e => handleFieldChange('p1_in', e.target.value)} className="h-9 rounded-xl border-[#d7cbb5] text-xs p-1" /></div>
+                                            <div className="space-y-1"><Label className="text-[8px] font-black uppercase text-[#8b5a2b]">P1 Out</Label><Input type="time" value={editForm.p1_out} onChange={e => handleFieldChange('p1_out', e.target.value)} className="h-9 rounded-xl border-[#d7cbb5] text-xs p-1" /></div>
+                                            <div className="space-y-1"><Label className="text-[8px] font-black uppercase text-[#8b5a2b]">P2 In</Label><Input type="time" value={editForm.p2_in} onChange={e => handleFieldChange('p2_in', e.target.value)} className="h-9 rounded-xl border-[#d7cbb5] text-xs p-1" /></div>
+                                            <div className="space-y-1"><Label className="text-[8px] font-black uppercase text-[#8b5a2b]">P2 Out</Label><Input type="time" value={editForm.p2_out} onChange={e => handleFieldChange('p2_out', e.target.value)} className="h-9 rounded-xl border-[#d7cbb5] text-xs p-1" /></div>
+                                        </div>
+                                    )}
 
-                            <div className="space-y-2">
-                                <Label className="text-[10px] font-black uppercase text-[#8b5a2b] ml-1">Infraction (DT)</Label>
-                                <Input
-                                    type="number"
-                                    value={editForm.infraction}
-                                    onChange={e => handleFieldChange('infraction', e.target.value)}
-                                    className="h-12 rounded-2xl border-[#c9b896] bg-red-50/50 font-bold focus:bg-white transition-all text-red-700"
-                                />
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label className="text-[10px] font-black uppercase text-[#8b5a2b] ml-1">Acompte (DT)</Label>
-                                <Input
-                                    type="number"
-                                    value={editForm.acompte}
-                                    onChange={e => handleFieldChange('acompte', e.target.value)}
-                                    className="h-12 rounded-2xl border-[#c9b896] bg-gray-50/50 font-bold focus:bg-white transition-all"
-                                />
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label className="text-[10px] font-black uppercase text-[#8b5a2b] ml-1">Extra (DT)</Label>
-                                <Input
-                                    type="number"
-                                    value={editForm.extra}
-                                    onChange={e => handleFieldChange('extra', e.target.value)}
-                                    className="h-12 rounded-2xl border-[#c9b896] bg-emerald-50/50 font-bold focus:bg-white transition-all text-emerald-700"
-                                />
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label className="text-[10px] font-black uppercase text-[#8b5a2b] ml-1">Doublage (DT)</Label>
-                                <Input
-                                    type="number"
-                                    value={editForm.doublage}
-                                    onChange={e => handleFieldChange('doublage', e.target.value)}
-                                    className="h-12 rounded-2xl border-[#c9b896] bg-cyan-50/50 font-bold focus:bg-white transition-all text-cyan-700"
-                                />
-                            </div>
-
-                            <div className="space-y-2 col-span-2">
-                                <Label className="text-[10px] font-black uppercase text-[#8b5a2b] ml-1">Notes / Remarque</Label>
-                                <Input
-                                    value={editForm.remarque}
-                                    onChange={e => setEditForm({ ...editForm, remarque: e.target.value })}
-                                    placeholder="Détails de l'ajustement..."
-                                    className="h-12 rounded-2xl border-[#c9b896] bg-[#f8f6f1]/50 font-bold focus:bg-white transition-all"
-                                />
+                                    <div className="col-span-2 space-y-1.5">
+                                        <Label className="text-[10px] font-black uppercase tracking-[0.1em] text-[#8b5a2b] ml-1">Notes / Remarque</Label>
+                                        <Input value={editForm.remarque} onChange={e => handleFieldChange('remarque', e.target.value)} placeholder="Détails de l'ajustement..." className="h-14 rounded-2xl border-[#d7cbb5] bg-[#fdfbf7]/50 focus-visible:ring-[#8b5a2b]" />
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
-                        <DialogFooter className="mt-8 gap-3 sm:flex-row flex-col">
-                            <Button
-                                variant="ghost"
-                                onClick={() => setIsEditDialogOpen(false)}
-                                className="h-12 px-6 rounded-2xl text-[#6b5744] font-black uppercase text-[11px] tracking-widest order-2 sm:order-1"
-                            >Annuler</Button>
-                            <Button
-                                onClick={saveEdit}
-                                disabled={isSaving}
-                                className="h-12 px-10 rounded-2xl bg-[#8b5a2b] hover:bg-[#6b4521] text-white font-black uppercase text-[11px] tracking-widest shadow-xl shadow-[#8b5a2b]/20 flex items-center justify-center gap-2 flex-1 sm:flex-none order-1 sm:order-2"
-                            >
-                                {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                                {isSaving ? "Enregistrement..." : "Enregistrer les modifications"}
+                        <div className="p-6 sm:p-8 bg-white flex items-center justify-between gap-4 border-t border-[#fdfbf7] shrink-0">
+                            <Button variant="link" onClick={() => setIsEditDialogOpen(false)} className="px-4 h-10 font-black uppercase tracking-widest text-[#8b5a2b]/40 hover:text-[#8b5a2b] text-xs">ANNULER</Button>
+                            <Button onClick={saveEdit} disabled={isSaving} className="px-6 h-12 rounded-full bg-[#8b5a2b] hover:bg-[#6b4420] text-white shadow-xl shadow-[#8b5a2b]/30 flex gap-3 font-black uppercase tracking-widest text-[10px] sm:text-xs group">
+                                {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-5 w-5 group-hover:scale-110 transition-transform" />}
+                                ENREGISTRER
                             </Button>
-                        </DialogFooter>
+                        </div>
                     </DialogContent>
                 </Dialog>
-            </main >
-        </div >
+
+                <Dialog open={isOverrideDialogOpen} onOpenChange={setIsOverrideDialogOpen}>
+                    <DialogContent className="bg-white sm:max-w-[450px] rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl">
+                        <div className="p-10 space-y-8">
+                            <div className="flex items-center gap-4">
+                                <div className="bg-[#8b5a2b]/10 p-3 rounded-2xl">
+                                    <Wallet className="h-7 w-7 text-[#8b5a2b]" />
+                                </div>
+                                <div>
+                                    <DialogTitle className="text-2xl font-bold text-[#8b5a2b] tracking-tight">Override Net à Payer</DialogTitle>
+                                    <DialogDescription className="text-sm text-[#8b5a2b]/60 font-medium">Forcer le montant final du mois</DialogDescription>
+                                </div>
+                            </div>
+
+                            <div className="space-y-4 text-center">
+                                <Label className="text-[11px] font-black uppercase tracking-[0.15em] text-[#8b5a2b] mb-2 block">Montant Net (DT)</Label>
+                                <Input
+                                    type="number"
+                                    value={manualNetValue}
+                                    onChange={e => setManualNetValue(e.target.value)}
+                                    className="h-20 rounded-[2rem] border-[#d7cbb5] bg-[#fdfbf7]/50 focus-visible:ring-[#8b5a2b] text-4xl font-bold text-[#8b5a2b] text-center tracking-tight"
+                                    placeholder="0.000"
+                                />
+                                <p className="text-[11px] text-[#8b5a2b]/50 leading-relaxed max-w-[280px] mx-auto">
+                                    En forçant ce montant, les calculs automatiques bases sur les jours de présence seront ignorés.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="p-8 bg-[#fdfbf7]/30 flex items-center justify-between gap-4 border-t border-[#d7cbb5]/10">
+                            <Button
+                                variant="ghost"
+                                onClick={handleResetNet}
+                                className="px-4 h-12 font-black uppercase tracking-[0.15em] text-red-500 hover:text-red-600 hover:bg-red-50 text-[10px] flex gap-2.5 rounded-full transition-all"
+                            >
+                                <RotateCcw className="h-4 w-4" />
+                                CALCUL AUTO
+                            </Button>
+                            <Button
+                                onClick={handleOverrideNet}
+                                className="px-8 h-14 rounded-full bg-[#8b5a2b] hover:bg-[#6b4420] text-white shadow-xl shadow-[#8b5a2b]/20 flex gap-3 font-black uppercase tracking-[0.2em] text-[11px] transition-all hover:scale-[1.02] active:scale-[0.98]"
+                            >
+                                <Save className="h-5 w-5" />
+                                MODIFIER
+                            </Button>
+                        </div>
+                    </DialogContent>
+                </Dialog>
+            </main>
+        </div>
     )
 }

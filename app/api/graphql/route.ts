@@ -22,6 +22,7 @@ const typeDefs = `#graphql
     cin_photo_back: String
     is_blocked: Boolean
     nbmonth: Int
+    is_coupure: Boolean
   }
 
   type Attendance {
@@ -46,6 +47,7 @@ const typeDefs = `#graphql
     infraction: Float
     remarque: String
     is_blocked: Boolean
+    schedule: UserSchedule
   }
 
   type AttendanceRecord {
@@ -69,6 +71,11 @@ const typeDefs = `#graphql
     sam: String
     departement: String
     photo: String
+    is_coupure: Boolean
+    p1_in: String
+    p1_out: String
+    p2_in: String
+    p2_out: String
   }
 
   input ScheduleInput {
@@ -79,6 +86,11 @@ const typeDefs = `#graphql
     jeu: String
     ven: String
     sam: String
+    is_coupure: Boolean
+    p1_in: String
+    p1_out: String
+    p2_in: String
+    p2_out: String
   }
 
   type Advance {
@@ -135,6 +147,7 @@ const typeDefs = `#graphql
     is_blocked: Boolean
     permissions: String
     nbmonth: Int
+    is_coupure: Boolean
   }
 
   type Extra {
@@ -171,7 +184,12 @@ const typeDefs = `#graphql
     clock_in: String
     clock_out: String
     updated: Boolean
+    p1_in: String
+    p1_out: String
+    p2_in: String
+    p2_out: String
     paid: Boolean
+    salaire_net: Float
   }
 
   type PerformanceStats {
@@ -195,6 +213,11 @@ const typeDefs = `#graphql
     remarque: String
     clock_in: String
     clock_out: String
+    p1_in: String
+    p1_out: String
+    p2_in: String
+    p2_out: String
+    salaire_net: Float
   }
 
   type Query {
@@ -596,6 +619,14 @@ const ensureStaticIndexes = async () => {
       for (const q of queries) {
         try { await pool.query(q); } catch (e) { }
       }
+      // Ensure user_schedules has new columns
+      try {
+        await pool.query(`ALTER TABLE public.user_schedules ADD COLUMN IF NOT EXISTS is_coupure BOOLEAN DEFAULT FALSE`);
+        await pool.query(`ALTER TABLE public.user_schedules ADD COLUMN IF NOT EXISTS p1_in VARCHAR(10)`);
+        await pool.query(`ALTER TABLE public.user_schedules ADD COLUMN IF NOT EXISTS p1_out VARCHAR(10)`);
+        await pool.query(`ALTER TABLE public.user_schedules ADD COLUMN IF NOT EXISTS p2_in VARCHAR(10)`);
+        await pool.query(`ALTER TABLE public.user_schedules ADD COLUMN IF NOT EXISTS p2_out VARCHAR(10)`);
+      } catch (e) { }
     } catch (e) {
       console.error("Index creation error:", e);
       staticIndexesPromise = null;
@@ -731,7 +762,7 @@ async function initializePayrollTable(month: string) {
           user_id INT,
           username VARCHAR(100),
           date DATE,
-          present INT DEFAULT 0,
+          present FLOAT DEFAULT 0,
           acompte FLOAT DEFAULT 0,
           extra FLOAT DEFAULT 0,
           prime FLOAT DEFAULT 0,
@@ -744,10 +775,14 @@ async function initializePayrollTable(month: string) {
           clock_out VARCHAR(50),
           updated BOOLEAN DEFAULT FALSE,
           paid boolean NOT NULL DEFAULT false,
+          p2_in VARCHAR(50),
+          p2_out VARCHAR(50),
+          salaire_net FLOAT DEFAULT 0,
           UNIQUE(user_id, date)
         )
       `);
       try {
+        await client.query(`ALTER TABLE public."${tableName}" ALTER COLUMN present TYPE FLOAT`);
         await client.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS retard INT DEFAULT 0`);
         await client.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS prime FLOAT DEFAULT 0`);
         await client.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS infraction FLOAT DEFAULT 0`);
@@ -756,6 +791,11 @@ async function initializePayrollTable(month: string) {
         await client.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS clock_in VARCHAR(50)`);
         await client.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS clock_out VARCHAR(50)`);
         await client.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS updated BOOLEAN DEFAULT FALSE`);
+        await client.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS p1_in VARCHAR(50)`);
+        await client.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS p1_out VARCHAR(50)`);
+        await client.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS p2_in VARCHAR(50)`);
+        await client.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS p2_out VARCHAR(50)`);
+        await client.query(`ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS salaire_net FLOAT DEFAULT 0`);
 
         await client.query(`
           DO $$
@@ -876,6 +916,9 @@ async function recomputePayrollForDate(targetDateStr: string, specificUserId: st
   const doublagesMap = new Map<number, number>();
   doublagesRes.rows.forEach((d: any) => doublagesMap.set(Number(d.user_id), parseFloat(d.total || 0)));
 
+  const schedulesMap = new Map<number, any>();
+  schedulesRes.rows.forEach((s: any) => schedulesMap.set(Number(s.user_id), s));
+
   // Group punches by user_id
   const punchesByUser = new Map();
   allPunches.forEach((p: any) => {
@@ -900,7 +943,7 @@ async function recomputePayrollForDate(targetDateStr: string, specificUserId: st
     let userPunches = punchesByUser.get(userIdNum) || [];
     userPunches.sort((a: any, b: any) => new Date(a.device_time).getTime() - new Date(b.device_time).getTime());
 
-    const schedule = schedules.find((s: any) => s.user_id == user.id);
+    const schedule = schedulesMap.get(userIdNum);
     let shiftType = schedule ? schedule[dayCol] : "Repos";
 
     // Override Repos if they actually came to work, so we calculate Retards
@@ -946,6 +989,38 @@ async function recomputePayrollForDate(targetDateStr: string, specificUserId: st
         shiftType = "Soir";
       } else if (firstHour < 14 && sTypeUpper === "SOIR") {
         shiftType = "Matin";
+      }
+    }
+
+    // MODE COUPURE LOGIC
+    // (using already fetched 'schedule')
+    const isCoupure = schedule?.is_coupure === true;
+    let coupureP1In = null, coupureP1Out = null, coupureP2In = null, coupureP2Out = null;
+
+    if (isCoupure && userPunches.length > 0) {
+      // User has 4 expected fingers. Let's try to map them to P1 and P2 segments.
+      // Reference times from schedule
+      const s_p1_in = schedule.p1_in || "08:00";
+      const s_p1_out = schedule.p1_out || "12:00";
+      const s_p2_in = schedule.p2_in || "14:00";
+      const s_p2_out = schedule.p2_out || "18:00";
+
+      // Match punches to segments.
+      // Logic: Seg 1 (Morning) is typically before 13:00, Seg 2 (Afternoon) after 13:00.
+      const morningPunches = userPunches.filter((p: any) => getTunisiaHour(parseMachineDate(p.device_time)) < 13);
+      const afternoonPunches = userPunches.filter((p: any) => getTunisiaHour(parseMachineDate(p.device_time)) >= 13);
+
+      if (morningPunches.length > 0) {
+        coupureP1In = formatTime(morningPunches[0].device_time);
+        if (morningPunches.length > 1) {
+          coupureP1Out = formatTime(morningPunches[morningPunches.length - 1].device_time);
+        }
+      }
+      if (afternoonPunches.length > 0) {
+        coupureP2In = formatTime(afternoonPunches[0].device_time);
+        if (afternoonPunches.length > 1) {
+          coupureP2Out = formatTime(afternoonPunches[afternoonPunches.length - 1].device_time);
+        }
       }
     }
 
@@ -1002,6 +1077,59 @@ async function recomputePayrollForDate(targetDateStr: string, specificUserId: st
           if (isPastDay || todayNow > cutOffTime) {
             isAbsent = true;
             reason = "Absence injustifiée (Chef)";
+          }
+        }
+      } else if (isCoupure) {
+        // Evaluate 2-part lateness
+        const s_p1_in = schedule.p1_in || "08:00";
+        const s_p2_in = schedule.p2_in || "14:00";
+
+        let totalRetard = 0;
+
+        // P1 Lateness
+        if (coupureP1In) {
+          const shiftStartTime = new Date(`${dateSQL}T${s_p1_in}:00.000+01:00`);
+          const punchTime = new Date(`${dateSQL}T${coupureP1In}:00.000+01:00`);
+          if (punchTime > shiftStartTime) {
+            totalRetard += Math.floor((punchTime.getTime() - shiftStartTime.getTime()) / 60000);
+          }
+        }
+
+        // P2 Lateness
+        if (coupureP2In) {
+          const shiftStartTime = new Date(`${dateSQL}T${s_p2_in}:00.000+01:00`);
+          const punchTime = new Date(`${dateSQL}T${coupureP2In}:00.000+01:00`);
+          if (punchTime > shiftStartTime) {
+            totalRetard += Math.floor((punchTime.getTime() - shiftStartTime.getTime()) / 60000);
+          }
+        }
+
+        if (totalRetard > 0) {
+          isRetard = true;
+          reason = formatDuration(totalRetard);
+          calculatedRetardMins = totalRetard;
+        }
+
+        // Absence check for Coupure
+        if (userPunches.length === 0) {
+          if (isPastDay || todayNow > new Date(`${dateSQL}T12:00:00.000+01:00`)) {
+            isAbsent = true;
+            reason = "Absence injustifiée (Coupure)";
+          }
+        } else {
+          // Partial presence logic: 0.5 for each completed segment
+          let presenceScore = 0;
+          if (coupureP1In && coupureP1Out) presenceScore += 0.5;
+          if (coupureP2In && coupureP2Out) presenceScore += 0.5;
+
+          if (presenceScore < 1 && isPastDay) {
+            if (presenceScore === 0) isAbsent = true;
+            else {
+              if (isPastDay) {
+                if (!coupureP1In || !coupureP1Out) reason = (reason ? reason + " + " : "") + "P1 Absent";
+                if (!coupureP2In || !coupureP2Out) reason = (reason ? reason + " + " : "") + "P2 Absent";
+              }
+            }
           }
         }
       } else {
@@ -1145,7 +1273,16 @@ async function recomputePayrollForDate(targetDateStr: string, specificUserId: st
     });
 
     let finalPresent = 0;
-    if (userPunches.length > 0) finalPresent = 1;
+    if (userPunches.length > 0) {
+      if (isCoupure) {
+        let presenceScore = 0;
+        if (coupureP1In && coupureP1Out) presenceScore += 0.5;
+        if (coupureP2In && coupureP2Out) presenceScore += 0.5;
+        finalPresent = presenceScore;
+      } else {
+        finalPresent = 1;
+      }
+    }
 
     // Use dayExtra to force present = 0 as requested by user
     if (dayExtra > 0) finalPresent = 0;
@@ -1197,8 +1334,8 @@ async function recomputePayrollForDate(targetDateStr: string, specificUserId: st
     const forceUpdated = isManuallyUpdatedInDB || dayExtra > 0;
 
     await pool.query(
-      `INSERT INTO public.\"${payrollTableName}\"(user_id, username, date, present, acompte, extra, prime, infraction, doublage, mise_a_pied, retard, remarque, clock_in, clock_out, updated)
-        VALUES($10, $12, $11, $1, $2, $3, $4, $5, $6, $7, $8, $9, $13, $14, $15)
+      `INSERT INTO public.\"${payrollTableName}\"(user_id, username, date, present, acompte, extra, prime, infraction, doublage, mise_a_pied, retard, remarque, clock_in, clock_out, updated, p1_in, p1_out, p2_in, p2_out)
+        VALUES($10, $12, $11, $1, $2, $3, $4, $5, $6, $7, $8, $9, $13, $14, $15, $16, $17, $18, $19)
          ON CONFLICT(user_id, date) DO UPDATE SET
           present = CASE WHEN public.\"${payrollTableName}\".updated = TRUE THEN public.\"${payrollTableName}\".present ELSE EXCLUDED.present END,
           acompte = EXCLUDED.acompte,
@@ -1211,8 +1348,16 @@ async function recomputePayrollForDate(targetDateStr: string, specificUserId: st
           remarque = CASE WHEN public.\"${payrollTableName}\".updated = TRUE THEN public.\"${payrollTableName}\".remarque ELSE EXCLUDED.remarque END,
           clock_in = CASE WHEN public.\"${payrollTableName}\".updated = TRUE THEN public.\"${payrollTableName}\".clock_in ELSE EXCLUDED.clock_in END,
           clock_out = CASE WHEN public.\"${payrollTableName}\".updated = TRUE THEN public.\"${payrollTableName}\".clock_out ELSE EXCLUDED.clock_out END,
-          updated = CASE WHEN EXCLUDED.updated = TRUE THEN TRUE ELSE public.\"${payrollTableName}\".updated END`,
-      [finalPresent, totalAdvance, dayExtra, dayPrime, dayInfraction, dayDoublage, miseAPiedDays, retardMins, finalRemark, user.id, dateSQL, user.username, clockIn, clockOut, forceUpdated]
+          updated = CASE WHEN EXCLUDED.updated = TRUE THEN TRUE ELSE public.\"${payrollTableName}\".updated END,
+          p1_in = EXCLUDED.p1_in,
+          p1_out = EXCLUDED.p1_out,
+          p2_in = EXCLUDED.p2_in,
+          p2_out = EXCLUDED.p2_out`,
+      [
+        finalPresent, totalAdvance, dayExtra, dayPrime, dayInfraction, dayDoublage, miseAPiedDays, retardMins, finalRemark,
+        user.id, dateSQL, user.username, clockIn, clockOut, forceUpdated,
+        coupureP1In, coupureP1Out, coupureP2In, coupureP2Out
+      ]
     );
   }));
 
@@ -1286,9 +1431,10 @@ const resolvers = {
     },
     getUser: async (_: any, { id }: { id: string }) => {
       const res = await pool.query(`
-        SELECT id, username, role, status, zktime_id, "département" as departement, email, phone, cin, base_salary, photo, is_blocked, permissions, nbmonth 
-        FROM public.users 
-        WHERE id = $1
+        SELECT u.id, u.username, u.role, u.status, u.zktime_id, u."département" as departement, u.email, u.phone, u.cin, u.base_salary, u.photo, u.is_blocked, u.permissions, u.nbmonth, s.is_coupure
+        FROM public.users u
+        LEFT JOIN public.user_schedules s ON u.id = s.user_id
+        WHERE u.id = $1
       `, [id]);
       const row = res.rows[0];
       if (!row) return null;
@@ -2217,7 +2363,9 @@ const resolvers = {
           delay,
           infraction: isManuallyUpdated ? parseFloat(userPayroll.infraction || 0) : Math.max(currentInfraction, (userPayroll ? parseFloat(userPayroll.infraction || 0) : 0)),
           remarque: userPayroll ? userPayroll.remarque : (isRetard ? delay : null),
-          lastPunch: userPunches.length > 0 ? userPunches[userPunches.length - 1].device_time : null
+          lastPunch: userPunches.length > 0 ? userPunches[userPunches.length - 1].device_time : null,
+          is_blocked: !!user.is_blocked,
+          schedule
         };
       });
 
@@ -2461,22 +2609,39 @@ const resolvers = {
       }
     },
     updateUserSchedule: async (_: any, { userId, schedule }: { userId: string, schedule: any }, context: any) => {
-      const { dim, lun, mar, mer, jeu, ven, sam } = schedule;
+      const { dim, lun, mar, mer, jeu, ven, sam, is_coupure, p1_in, p1_out, p2_in, p2_out } = schedule;
       const check = await pool.query('SELECT user_id FROM public.user_schedules WHERE user_id = $1', [userId]);
 
       if (check.rows.length === 0) {
         const userRes = await pool.query('SELECT username FROM public.users WHERE id = $1', [userId]);
         const username = userRes.rows[0]?.username || "Unknown";
         const res = await pool.query(
-          `INSERT INTO public.user_schedules(user_id, username, dim, lun, mar, mer, jeu, ven, sam) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
-          [userId, username, dim, lun, mar, mer, jeu, ven, sam]
+          `INSERT INTO public.user_schedules(user_id, username, dim, lun, mar, mer, jeu, ven, sam, is_coupure, p1_in, p1_out, p2_in, p2_out) 
+           VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING *`,
+          [
+            userId, username,
+            dim ?? null, lun ?? null, mar ?? null, mer ?? null, jeu ?? null, ven ?? null, sam ?? null,
+            is_coupure ?? false, p1_in ?? '08:00', p1_out ?? '12:00', p2_in ?? '14:00', p2_out ?? '18:00'
+          ]
         );
         await createNotification('schedule', "Emploi du temps créé", `L'emploi du temps de ${username} a été initialisé.`, userId, context.userDone);
         return res.rows[0];
       } else {
         const res = await pool.query(
-          `UPDATE public.user_schedules SET dim = $2, lun = $3, mar = $4, mer = $5, jeu = $6, ven = $7, sam = $8 WHERE user_id = $1 RETURNING *`,
-          [userId, dim, lun, mar, mer, jeu, ven, sam]
+          `UPDATE public.user_schedules 
+           SET dim = COALESCE($2, dim), lun = COALESCE($3, lun), mar = COALESCE($4, mar), 
+               mer = COALESCE($5, mer), jeu = COALESCE($6, jeu), ven = COALESCE($7, ven), 
+               sam = COALESCE($8, sam), 
+               is_coupure = COALESCE($9, is_coupure), 
+               p1_in = COALESCE($10, p1_in), p1_out = COALESCE($11, p1_out), 
+               p2_in = COALESCE($12, p2_in), p2_out = COALESCE($13, p2_out) 
+           WHERE user_id = $1 RETURNING *`,
+          [
+            userId,
+            dim ?? null, lun ?? null, mar ?? null, mer ?? null, jeu ?? null, ven ?? null, sam ?? null,
+            is_coupure !== undefined ? is_coupure : null,
+            p1_in ?? null, p1_out ?? null, p2_in ?? null, p2_out ?? null
+          ]
         );
         const row = res.rows[0];
         await createNotification('schedule', "Emploi du temps modifié", `L'emploi du temps de ${row.username} a été mis à jour.`, userId, context.userDone);
