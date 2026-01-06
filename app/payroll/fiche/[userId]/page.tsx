@@ -545,7 +545,17 @@ export default function UserFichePage() {
                 </div>
 
                 <div className="p-6 sm:p-8 lg:p-10 max-w-7xl mx-auto print:p-0 print:max-w-none print:m-0 print-container">
-                    <Card className="bg-white border-[#3d2c1e] shadow-xl p-8 print:p-2 print:border-px print:shadow-none card-print relative min-h-[900px] print:min-h-0">
+                    <Card className={cn(
+                        "border-[#3d2c1e] shadow-xl p-8 print:p-2 print:border-px print:shadow-none card-print relative min-h-[900px] print:min-h-0 overflow-hidden",
+                        stats.isPaid ? "bg-gray-100/80" : "bg-white"
+                    )}>
+                        {stats.isPaid && (
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0 select-none opacity-[0.08] print:opacity-[0.05]">
+                                <span className="text-[180px] font-black border-[20px] border-gray-900 p-20 rounded-[100px] -rotate-[35deg] tracking-[20px] uppercase">
+                                    PAYÉ
+                                </span>
+                            </div>
+                        )}
                         <div className="relative z-10 flex flex-col h-full">
                             <div className="grid grid-cols-2 border border-[#3d2c1e] print:text-[9.5px] mb-2">
                                 <div className="p-4 print:p-2 border-r border-[#3d2c1e] space-y-1">
