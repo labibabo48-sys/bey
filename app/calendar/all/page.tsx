@@ -226,7 +226,6 @@ export default function AllSchedulesPlacementPage() {
 
                         <div className="flex items-center gap-2 lg:gap-4 justify-between md:justify-end">
                             <div className="flex p-0.5 bg-[#f1e9db] rounded-lg border border-[#c9b896]/20 shadow-inner overflow-hidden shrink-0">
-                                <Link href="/calendar" className="px-2 lg:px-4 py-1.5 rounded-md text-[9px] lg:text-xs font-black transition-all text-[#8b5a2b]/40 hover:text-[#8b5a2b]">Journal</Link>
                                 <Link href="/calendar/all" className="px-2 lg:px-4 py-1.5 rounded-md text-[9px] lg:text-xs font-black transition-all bg-[#8b5a2b] text-white shadow-sm">Touts</Link>
                                 <Link href="/schedule" className="px-2 lg:px-4 py-1.5 rounded-md text-[9px] lg:text-xs font-black transition-all text-[#8b5a2b]/40 hover:text-[#8b5a2b]">Créer</Link>
                             </div>

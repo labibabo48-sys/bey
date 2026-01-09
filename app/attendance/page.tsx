@@ -119,6 +119,9 @@ function AttendanceContent() {
     try { permissions = JSON.parse(currentUser.permissions) || {}; } catch (e) { }
   }
   const canSee = (cat: string, key: string) => {
+    // Managers can NEVER pardon
+    if (currentUser?.role === 'manager' && cat === 'attendance' && key === 'pardon') return false;
+
     if (currentUser?.role === 'admin') return true;
     if (!permissions[cat]) return true;
     return permissions[cat][key] !== false;

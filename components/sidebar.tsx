@@ -69,7 +69,7 @@ export function Sidebar() {
     { name: "Tableau de bord", href: "/", icon: Home, roles: ["admin", "manager", "user"], permKey: "dashboard" },
     { name: "Présences", href: "/attendance", icon: Clock, roles: ["admin", "manager", "user"], permKey: "attendance" },
     { name: "Employés", href: "/employees", icon: Users, roles: ["admin", "manager"], permKey: "employees" },
-    { name: "Calendrier", href: "/calendar", icon: Calendar, roles: ["admin", "manager", "user"], permKey: "calendar" },
+    { name: "Calendrier", href: "/calendar/all", icon: Calendar, roles: ["admin", "manager", "user"], permKey: "calendar" },
     { name: "Paie", href: "/payroll", icon: DollarSign, roles: ["admin", "manager"], permKey: "payroll" },
     { name: "Fiche de Paie", href: "/payroll/fiche", icon: FileText, roles: ["admin", "manager"], permKey: "fiche_payroll" },
     { name: "Reclamations", href: "/notebook", icon: BookOpen, roles: ["admin", "manager"], permKey: "notebook" },

@@ -46,92 +46,20 @@ const MARK_ONE_READ = gql`
   }
 `;
 
-export function NotificationBell() {
-  const router = useRouter()
-  const currentUser = getCurrentUser()
-
-  let permissions: any = {};
-  if (currentUser?.permissions) {
-    try { permissions = JSON.parse(currentUser.permissions); } catch (e) { }
-  }
-  const canViewNotifications = currentUser?.role === 'admin' || permissions?.notifications?.view !== false;
-
-  const { data, loading, refetch, startPolling, stopPolling } = useQuery(GET_NOTIFICATIONS, {
-    variables: {
-      userId: ['admin', 'manager'].includes(currentUser?.role || '') ? null : currentUser?.id,
-      limit: 100
-    },
-    pollInterval: 60000,
-    fetchPolicy: "cache-and-network",
-    skip: !canViewNotifications // Skip query if no permission
-  });
-
-  const [optimisticAllRead, setOptimisticAllRead] = useState(false);
-  const [markAllRead] = useMutation(MARK_ALL_READ, {
-    onCompleted: () => refetch()
-  });
-  const [markOneRead] = useMutation(MARK_ONE_READ);
-
-  if (!canViewNotifications) return null;
-
-  const notifications = useMemo(() => data?.getNotifications || [], [data]);
-
-
+const NotificationDropdown = ({
+  icon,
+  badgeColor,
+  notifications,
+  onMarkAllRead,
+  onItemClick,
+  optimisticAllRead,
+  title,
+  iconColor
+}: any) => {
   const unreadCount = useMemo(() => {
     if (optimisticAllRead) return 0;
     return notifications.filter((n: any) => !n.read).length;
   }, [notifications, optimisticAllRead]);
-
-  // Reset optimistic state when data actually updates from server
-  useEffect(() => {
-    if (data) setOptimisticAllRead(false);
-  }, [data]);
-
-  const handleMarkAllAsRead = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setOptimisticAllRead(true); // Force immediate UI feedback
-    if (!currentUser?.id) return;
-    await markAllRead({ variables: { userId: currentUser.id } });
-  }
-
-  const handleNotificationClick = (notification: any) => {
-    // Immediate background mark-as-read
-    if (!notification.read) {
-      markOneRead({ variables: { id: notification.id } }).catch(() => { });
-    }
-
-    let target = notification.url;
-
-    // 1. Extract UID from message fallback if user_id is missing (Facebook-style robustness)
-    let uid = notification.user_id;
-    if (!uid && notification.message) {
-      const match = notification.message.match(/\[REF:.*?(\d+)_/);
-      if (match) uid = match[1];
-    }
-
-    // 2. Self-healing for broken URLs (e.g., "/attendance?userId=")
-    const isBroken = target && target.includes('userId=') && (!target.split('userId=')[1] || target.split('userId=')[1].startsWith('&'));
-
-    if (!target || isBroken) {
-      if (notification.type === 'pointage') {
-        target = `/attendance?userId=${uid || ''}`;
-        // If it was a retard/absence with date in message, try to extract it too
-        const dateMatch = notification.message?.match(/le (\d{4}-\d{2}-\d{2})/);
-        if (dateMatch && !target.includes('date=')) target += `&date=${dateMatch[1]}`;
-      }
-      else if (notification.type === 'system' || notification.type === 'schedule') target = `/employees?userId=${uid || ''}`;
-      else if (notification.type === 'avance') target = `/advances?userId=${uid || ''}`;
-      else if (notification.type === 'payment') target = `/payroll`;
-      else target = '/';
-    }
-
-    // 3. Final cleanup and navigation
-    if (target) {
-      // Ensure we don't end up with just "?" or empty strings
-      if (target.endsWith('userId=')) target = target.replace('userId=', '');
-      router.push(target);
-    }
-  }
 
   const getNotificationIcon = (type: string) => {
     switch (type) {
@@ -170,9 +98,12 @@ export function NotificationBell() {
           size="icon"
           className="relative h-12 w-12 lg:h-14 lg:w-14 rounded-full hover:bg-[#8b5a2b]/10 transition-colors"
         >
-          <Bell className="h-6 w-6 lg:h-7 lg:w-7 text-[#8b5a2b]" />
+          {icon}
           {unreadCount > 0 && (
-            <Badge className="absolute -top-1 -right-1 h-6 w-6 flex items-center justify-center rounded-full bg-red-500 text-white text-xs font-bold border-2 border-white p-0">
+            <Badge className={cn(
+              "absolute -top-1 -right-1 h-6 w-6 flex items-center justify-center rounded-full text-white text-xs font-bold border-2 border-white p-0",
+              badgeColor
+            )}>
               {unreadCount > 9 ? "9+" : unreadCount}
             </Badge>
           )}
@@ -181,7 +112,7 @@ export function NotificationBell() {
       <DropdownMenuContent align="end" className="w-[380px] sm:w-[420px] max-h-[600px] overflow-hidden flex flex-col p-0">
         <DropdownMenuLabel className="flex items-center justify-between py-4 px-5 bg-white border-b border-[#c9b896]/30">
           <div className="flex flex-col">
-            <span className="text-lg lg:text-xl font-black text-[#8b5a2b] uppercase tracking-tight">Notifications</span>
+            <span className={cn("text-lg lg:text-xl font-black uppercase tracking-tight", iconColor)}>{title}</span>
             {unreadCount > 0 && (
               <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest">{unreadCount} nouveau{unreadCount > 1 ? "x" : ""}</span>
             )}
@@ -190,16 +121,14 @@ export function NotificationBell() {
             variant="ghost"
             size="sm"
             className="h-8 text-[11px] font-black uppercase text-[#8b5a2b] hover:bg-[#8b5a2b]/5 gap-2"
-            onClick={handleMarkAllAsRead}
+            onClick={onMarkAllRead}
           >
             <Check className="h-3 w-3" /> Tout marquer comme lu
           </Button>
         </DropdownMenuLabel>
 
         <div className="flex-1 overflow-y-auto">
-          {!data && loading ? (
-            <div className="py-12 text-center text-[#6b5744] font-bold animate-pulse uppercase tracking-widest text-xs">Chargement...</div>
-          ) : notifications.length === 0 ? (
+          {notifications.length === 0 ? (
             <div className="py-20 text-center text-[#6b5744] opacity-40">
               <Bell className="h-16 w-16 mx-auto mb-4 text-[#c9b896]" />
               <p className="text-xs font-black uppercase tracking-widest">Aucune notification</p>
@@ -209,7 +138,7 @@ export function NotificationBell() {
               {notifications.map((notification: any) => (
                 <DropdownMenuItem
                   key={notification.id}
-                  onClick={() => handleNotificationClick(notification)}
+                  onClick={() => onItemClick(notification)}
                   className={cn(
                     "p-5 cursor-pointer transition-all duration-200 focus:bg-[#f8f6f1]",
                     !(optimisticAllRead || notification.read) ? "bg-[#f8f6f1]/50 border-l-4 border-l-[#8b5a2b]" : "bg-white grayscale-[0.5] opacity-80"
@@ -259,5 +188,146 @@ export function NotificationBell() {
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+export function NotificationBell() {
+  const router = useRouter()
+  const currentUser = getCurrentUser()
+
+  let permissions: any = {};
+  if (currentUser?.permissions) {
+    try { permissions = JSON.parse(currentUser.permissions); } catch (e) { }
+  }
+  const canViewNotifications = currentUser?.role === 'admin' || permissions?.notifications?.view !== false;
+
+  const { data, loading, refetch } = useQuery(GET_NOTIFICATIONS, {
+    variables: {
+      userId: ['admin', 'manager'].includes(currentUser?.role || '') ? null : currentUser?.id,
+      limit: 100
+    },
+    pollInterval: 60000,
+    fetchPolicy: "cache-and-network",
+    skip: !canViewNotifications // Skip query if no permission
+  });
+
+  // Split optimistic state
+  const [optimisticMachineRead, setOptimisticMachineRead] = useState(false);
+  const [optimisticManagerRead, setOptimisticManagerRead] = useState(false);
+
+  const [markAllRead] = useMutation(MARK_ALL_READ, {
+    onCompleted: () => refetch()
+  });
+  const [markOneRead] = useMutation(MARK_ONE_READ);
+
+  if (!canViewNotifications) return null;
+
+  const allNotifications = useMemo(() => data?.getNotifications || [], [data]);
+
+  const machineNotifications = useMemo(() =>
+    allNotifications.filter((n: any) => n.userDone === 'Machine ZKTeco'),
+    [allNotifications]);
+
+  const managerNotifications = useMemo(() =>
+    allNotifications.filter((n: any) => n.userDone !== 'Machine ZKTeco'),
+    [allNotifications]);
+
+  // Reset optimistic state when data actually updates from server
+  useEffect(() => {
+    if (data) {
+      setOptimisticMachineRead(false);
+      setOptimisticManagerRead(false);
+    }
+  }, [data]);
+
+  // Helper to mark a specific list as read (client-side loop for granular control)
+  // Since the backend 'markAll' clears everything, we simulate "Mark Section as Read"
+  // by marking distinct IDs. This is safer than modifying the backend schema right now.
+  const handleMarkListAsRead = async (e: React.MouseEvent, list: any[], setOptimistic: (v: boolean) => void) => {
+    e.stopPropagation();
+    setOptimistic(true); // Force immediate UI feedback
+
+    // Filter effectively unread items
+    const unreadIds = list.filter((n: any) => !n.read).map((n: any) => n.id);
+
+    if (unreadIds.length === 0) return;
+
+    // Fire and forget requests for responsiveness
+    Promise.all(unreadIds.map((id: string) =>
+      markOneRead({ variables: { id } }).catch(() => { })
+    )).then(() => {
+      // Optional: fast refetch
+      refetch();
+    });
+  }
+
+  const handleMarkMachineRead = (e: React.MouseEvent) => handleMarkListAsRead(e, machineNotifications, setOptimisticMachineRead);
+  const handleMarkManagerRead = (e: React.MouseEvent) => handleMarkListAsRead(e, managerNotifications, setOptimisticManagerRead);
+
+  const handleNotificationClick = (notification: any) => {
+    // Immediate background mark-as-read
+    if (!notification.read) {
+      markOneRead({ variables: { id: notification.id } }).catch(() => { });
+    }
+
+    let target = notification.url;
+
+    // 1. Extract UID from message fallback if user_id is missing (Facebook-style robustness)
+    let uid = notification.user_id;
+    if (!uid && notification.message) {
+      const match = notification.message.match(/\[REF:.*?(\d+)_/);
+      if (match) uid = match[1];
+    }
+
+    // 2. Self-healing for broken URLs (e.g., "/attendance?userId=")
+    const isBroken = target && target.includes('userId=') && (!target.split('userId=')[1] || target.split('userId=')[1].startsWith('&'));
+
+    if (!target || isBroken) {
+      if (notification.type === 'pointage') {
+        target = `/attendance?userId=${uid || ''}`;
+        // If it was a retard/absence with date in message, try to extract it too
+        const dateMatch = notification.message?.match(/le (\d{4}-\d{2}-\d{2})/);
+        if (dateMatch && !target.includes('date=')) target += `&date=${dateMatch[1]}`;
+      }
+      else if (notification.type === 'system' || notification.type === 'schedule') target = `/employees?userId=${uid || ''}`;
+      else if (notification.type === 'avance') target = `/advances?userId=${uid || ''}`;
+      else if (notification.type === 'payment') target = `/payroll`;
+      else target = '/';
+    }
+
+    // 3. Final cleanup and navigation
+    if (target) {
+      // Ensure we don't end up with just "?" or empty strings
+      if (target.endsWith('userId=')) target = target.replace('userId=', '');
+      router.push(target);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-8">
+      {/* Manager Bell */}
+      <NotificationDropdown
+        icon={<Bell className="h-6 w-6 lg:h-7 lg:w-7 text-indigo-600" />}
+        iconColor="text-indigo-600"
+        badgeColor="bg-indigo-500"
+        title="Notification Manager"
+        notifications={managerNotifications}
+        onMarkAllRead={handleMarkManagerRead}
+        onItemClick={handleNotificationClick}
+        optimisticAllRead={optimisticManagerRead}
+      />
+
+      {/* Machine Bell */}
+      <NotificationDropdown
+        icon={<Bell className="h-6 w-6 lg:h-7 lg:w-7 text-[#8b5a2b]" />}
+        iconColor="text-[#8b5a2b]"
+        badgeColor="bg-red-500"
+        title="Machine"
+        notifications={machineNotifications}
+        onMarkAllRead={handleMarkMachineRead}
+        onItemClick={handleNotificationClick}
+        optimisticAllRead={optimisticMachineRead}
+      />
+    </div>
   )
 }

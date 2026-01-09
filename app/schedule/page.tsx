@@ -225,15 +225,6 @@ export default function SchedulePage() {
               </div>
               <div className="flex p-0.5 bg-[#f1e9db] rounded-lg lg:rounded-2xl border border-[#c9b896]/20">
                 <Link
-                  href="/calendar"
-                  className={cn(
-                    "flex items-center gap-1.5 px-3 py-1.5 lg:px-6 lg:py-3 rounded-md lg:rounded-xl text-[10px] lg:text-base font-black transition-all text-[#8b5a2b]/50 hover:text-[#8b5a2b]"
-                  )}
-                >
-                  <Book className="h-3 w-3 lg:h-5 lg:w-5" />
-                  <span>Journal</span>
-                </Link>
-                <Link
                   href="/calendar/all"
                   className={cn(
                     "flex items-center gap-1.5 px-3 py-1.5 lg:px-6 lg:py-3 rounded-md lg:rounded-xl text-[10px] lg:text-base font-black transition-all text-[#8b5a2b]/50 hover:text-[#8b5a2b]"

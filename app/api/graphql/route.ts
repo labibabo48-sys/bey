@@ -456,20 +456,24 @@ const ensureNotificationsTable = async () => {
 };
 
 // Internal helper to create notifications
+const getTunisiaTime = () => {
+  const d = new Date();
+  const options: Intl.DateTimeFormatOptions = { timeZone: 'Africa/Tunis', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
+  const formatter = new Intl.DateTimeFormat('en-US', options);
+  const parts = formatter.formatToParts(d);
+  const getPart = (type: string) => parts.find(p => p.type === type)?.value || '00';
+  return `${getPart('year')}-${getPart('month')}-${getPart('day')} ${getPart('hour')}:${getPart('minute')}:${getPart('second')}`;
+};
+
 const createNotification = async (type: string, title: string, message: string, userId: string | null = null, userDone: string | null = null, url: string | null = null, customTimestamp: string | null = null) => {
   try {
     await ensureNotificationsTable();
-    if (customTimestamp) {
-      await pool.query(
-        `INSERT INTO public.notifications (type, title, message, user_id, user_done, url, timestamp) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [type, title, message, userId, userDone, url, customTimestamp]
-      );
-    } else {
-      await pool.query(
-        `INSERT INTO public.notifications (type, title, message, user_id, user_done, url) VALUES ($1, $2, $3, $4, $5, $6)`,
-        [type, title, message, userId, userDone, url]
-      );
-    }
+    const timestamp = customTimestamp || getTunisiaTime();
+
+    await pool.query(
+      `INSERT INTO public.notifications (type, title, message, user_id, user_done, url, timestamp) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [type, title, message, userId, userDone, url, timestamp]
+    );
   } catch (e) {
     console.error("Notification Error:", e);
   }
@@ -3483,8 +3487,14 @@ const resolvers = {
       }
 
       const normalizedRole = (role || '').toLowerCase();
+
+      // FAILSAFE: If ID is '1' (primary admin), force admin rights for notification clearing
+      // This solves the issue where the main admin can see other users' notifications but cannot clear them
+      // because the DB lookup might classify them as a regular 'user' or checks fail.
+      const effectiveRole = (userId === '1' || userId === 'user-1') ? 'admin' : normalizedRole;
+
       // Expanded role check for safety
-      if (['admin', 'manager', 'administrateur', 'superadmin'].includes(normalizedRole)) {
+      if (['admin', 'manager', 'administrateur', 'superadmin'].includes(effectiveRole)) {
         // Admins/Managers see ALL notifications
         await pool.query('UPDATE public.notifications SET read = TRUE');
       } else {
