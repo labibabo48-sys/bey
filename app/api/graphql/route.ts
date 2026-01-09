@@ -50,6 +50,7 @@ const typeDefs = `#graphql
     is_blocked: Boolean
     schedule: UserSchedule
     absentDaysCount: Float
+    daysLateCount: Float
   }
 
   type AttendanceRecord {
@@ -2187,9 +2188,9 @@ const resolvers = {
 
       // Parallelize Fetching with optimized index-friendly queries
       const nextDateSQL = formatDateLocal(new Date(logicalDay.getTime() + 86400000));
-      const [usersRes, schedulesRes, allPunches, retardsRes, absentsRes, payrollRes, monthAbsentsRes] = await Promise.all([
+      const [usersRes, schedulesRes, allPunches, retardsRes, absentsRes, payrollRes, monthAbsentsRes, monthRetardsRes] = await Promise.all([
         pool.query(`
-          SELECT id, username, role, status, zktime_id, "département" as departement, email, phone, cin, base_salary, photo, is_blocked, permissions, nbmonth, is_coupure 
+          SELECT id, username, role, status, zktime_id, "département" as departement, email, phone, cin, base_salary, photo, is_blocked, permissions, nbmonth, is_coupure, is_fixed
           FROM public.users 
           ORDER BY id ASC
         `),
@@ -2198,9 +2199,9 @@ const resolvers = {
         pool.query('SELECT user_id, reason FROM public.retards WHERE date >= $1 AND date < $2', [dateSQL, nextDateSQL]),
         pool.query('SELECT user_id, reason, type FROM public.absents WHERE date >= $1 AND date < $2', [dateSQL, nextDateSQL]),
         pool.query(`SELECT * FROM public."${payrollTableName}" WHERE date = $1`, [dateSQL]),
-        pool.query(`SELECT user_id, SUM(1 - present) as absent_count FROM public."${payrollTableName}" WHERE present < 1 AND date <= $1 GROUP BY user_id`, [dateSQL])
+        pool.query(`SELECT user_id, COUNT(*) as count FROM public.absents WHERE date >= '${dateSQL.substring(0, 7)}-01' AND date <= '${dateSQL}' AND (user_id, date) NOT IN (SELECT user_id, date FROM public.retards WHERE date >= '${dateSQL.substring(0, 7)}-01' AND date <= '${dateSQL}') GROUP BY user_id`),
+        pool.query(`SELECT user_id, COUNT(*) as count FROM public.retards WHERE date >= '${dateSQL.substring(0, 7)}-01' AND date <= '${dateSQL}' GROUP BY user_id`)
       ]);
-
 
       const users = usersRes.rows.map((u: any) => ({
         ...u,
@@ -2222,18 +2223,21 @@ const resolvers = {
         absentsMap.get(uid)!.push(a);
       });
 
+      // Use dayPayrollMap as expected by downstream logic
       const dayPayrollMap = new Map<number, any>();
       payrollRes.rows.forEach((p: any) => dayPayrollMap.set(Number(p.user_id), p));
 
       const monthAbsentsMap = new Map<number, number>();
-      monthAbsentsRes.rows.forEach((r: any) => monthAbsentsMap.set(Number(r.user_id), parseInt(r.absent_count)));
+      monthAbsentsRes.rows.forEach((r: any) => monthAbsentsMap.set(Number(r.user_id), parseInt(r.count)));
 
-      // Group punches by user_id for O(1) lookup inside the loop
-      const punchesByUser = new Map();
+      const monthRetardsMap = new Map<number, number>();
+      monthRetardsRes.rows.forEach((r: any) => monthRetardsMap.set(Number(r.user_id), parseInt(r.count)));
+
+      const punchesByUser = new Map<number, any[]>();
       allPunches.forEach((p: any) => {
         const uid = Number(p.user_id);
         if (!punchesByUser.has(uid)) punchesByUser.set(uid, []);
-        punchesByUser.get(uid).push(p);
+        punchesByUser.get(uid)!.push(p);
       });
 
       const results = users.map((user: any) => {
@@ -2482,7 +2486,8 @@ const resolvers = {
           lastPunch: userPunches.length > 0 ? userPunches[userPunches.length - 1].device_time : null,
           is_blocked: !!user.is_blocked,
           schedule,
-          absentDaysCount: monthAbsentsMap.get(uId) || 0
+          absentDaysCount: monthAbsentsMap.get(uId) || 0,
+          daysLateCount: monthRetardsMap.get(uId) || 0
         };
       });
 

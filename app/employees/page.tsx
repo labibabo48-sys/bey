@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { RoleBadge } from "@/components/role-badge"
-import { Search, UserPlus, Mail, Eye, Edit, X, Phone, CreditCard, Check, ChevronsUpDown, DollarSign, Camera, Upload, Trash2, AlertTriangle, Loader2 } from "lucide-react"
+import { Search, UserPlus, Mail, Eye, Edit, X, Phone, CreditCard, Check, ChevronsUpDown, DollarSign, Camera, Upload, Trash2, AlertTriangle, Loader2, Clock } from "lucide-react"
 import { useState, useMemo, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
@@ -793,19 +793,45 @@ function EmployeesContent() {
                     </div>
 
 
-                    {/* Status Badge */}
-                    <div className="flex items-center justify-between pt-2 sm:pt-4">
-                      <div
-                        className={`px-4 sm:px-5 py-2 sm:py-3 rounded-full text-sm sm:text-base md:text-lg font-semibold flex items-center gap-2 sm:gap-3 ${employee.status === "IN"
-                          ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
-                          : "bg-rose-100 text-rose-700 border border-rose-200"
-                          }`}
-                      >
-                        <span
-                          className={`h-2.5 w-2.5 sm:h-3 sm:w-3 rounded-full ${employee.status === "IN" ? "bg-emerald-500" : "bg-rose-500"}`}
-                        />
-                        {employee.status === "IN" ? "Présent" : "Absent"}
-                      </div>
+                    {/* Status & Mode */}
+                    <div className="space-y-3 pt-2 sm:pt-4">
+                      {/* Presence Badge (Only if IN) */}
+                      {employee.status === "IN" && (
+                        <div className="w-fit px-4 sm:px-5 py-2 sm:py-3 rounded-full text-sm sm:text-base md:text-lg font-semibold flex items-center gap-2 sm:gap-3 bg-emerald-100 text-emerald-700 border border-emerald-200">
+                          <span className="h-2.5 w-2.5 sm:h-3 sm:w-3 rounded-full bg-emerald-500" />
+                          Présent
+                        </div>
+                      )}
+
+                      {/* Schedule Mode Info */}
+                      {(employee.isFixed || employee.isCoupure) && (
+                        <div className="bg-[#f8f6f1] border border-[#c9b896]/40 rounded-xl p-3 text-sm sm:text-base">
+                          {employee.isFixed && (
+                            <div className="flex flex-col gap-1">
+                              <span className="font-bold text-[#8b5a2b] uppercase tracking-wide text-xs">Mode Fixe</span>
+                              <div className="flex items-center gap-2 text-[#3d2c1e] font-medium">
+                                <Clock className="h-4 w-4 text-[#8b5a2b]" />
+                                <span>{employee.fixed_in?.slice(0, 5)} - {employee.fixed_out?.slice(0, 5)}</span>
+                              </div>
+                            </div>
+                          )}
+                          {employee.isCoupure && (
+                            <div className="flex flex-col gap-1">
+                              <span className="font-bold text-[#8b5a2b] uppercase tracking-wide text-xs">Mode Coupure</span>
+                              <div className="flex flex-col gap-1 text-[#3d2c1e] font-medium">
+                                <div className="flex items-center gap-2">
+                                  <Clock className="h-4 w-4 text-[#8b5a2b]" />
+                                  <span>Matin: {employee.p1_in?.slice(0, 5)} - {employee.p1_out?.slice(0, 5)}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Clock className="h-4 w-4 text-[#8b5a2b]" />
+                                  <span>Soir: {employee.p2_in?.slice(0, 5)} - {employee.p2_out?.slice(0, 5)}</span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 

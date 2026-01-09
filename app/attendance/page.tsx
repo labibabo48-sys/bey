@@ -43,6 +43,7 @@ const GET_PERSONNEL_STATUS = gql`
       infraction
       remarque
       absentDaysCount
+      daysLateCount
     }
   }
 `;
@@ -714,9 +715,9 @@ function AttendanceContent() {
                           </td>
                           <td className="px-6 py-4 text-center">
                             {person.workedHours ? (
-                              <div className="flex flex-col items-center">
+                              <div className="flex flex-row items-baseline justify-center gap-1">
                                 <span className="text-xl font-black text-emerald-700 leading-none">{person.workedHours.split(' ')[0]}</span>
-                                <span className="text-[10px] font-bold text-[#8b5a2b] opacity-40 uppercase tracking-tighter">{person.workedHours.split(' ')[1]}</span>
+                                <span className="text-xl font-black text-emerald-700 leading-none">{person.workedHours.split(' ')[1]}</span>
                               </div>
                             ) : (
                               <span className="text-[#8b5a2b]/20">—</span>
@@ -734,6 +735,7 @@ function AttendanceContent() {
                               )}>
                                 {person.state}
                                 {person.state === "Absent" && person.absentDaysCount > 0 && ` ${person.absentDaysCount}`}
+                                {person.state === "Retard" && person.daysLateCount > 0 && ` ${person.daysLateCount}j`}
                               </span>
                               {person.state === "Retard" && person.delay && (
                                 <span className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded border border-red-200 animate-pulse whitespace-nowrap">
