@@ -97,6 +97,15 @@ const GET_LISTS_DATA = gql`
       montant
       date
     }
+    getAdvances(month: $month) {
+      id
+      user_id
+      username
+      montant
+      date
+      motif
+      statut
+    }
   }
 `
 
@@ -359,6 +368,7 @@ export default function PayrollPage() {
   const [viewDoublagesSelectedDepartment, setViewDoublagesSelectedDepartment] = useState("all")
   const [viewExtrasSelectedDepartment, setViewExtrasSelectedDepartment] = useState("all")
   const [viewPrimesSelectedDepartment, setViewPrimesSelectedDepartment] = useState("all")
+  const [viewAdvancesSelectedDepartment, setViewAdvancesSelectedDepartment] = useState("all")
   const [viewPaidSelectedDepartment, setViewPaidSelectedDepartment] = useState("all")
 
   // Auto-scroll Logic
@@ -415,6 +425,9 @@ export default function PayrollPage() {
   // Primes View Dialog State
   const [viewPrimesOpen, setViewPrimesOpen] = useState(false)
 
+  // Advances View Dialog State
+  const [viewAdvancesOpen, setViewAdvancesOpen] = useState(false)
+
   // Paid View Dialog State
   const [viewPaidOpen, setViewPaidOpen] = useState(false)
 
@@ -423,6 +436,7 @@ export default function PayrollPage() {
   const [listeDoublageOpen, setListeDoublageOpen] = useState(false)
   const [listeExtrasOpen, setListeExtrasOpen] = useState(false)
   const [listePrimesOpen, setListePrimesOpen] = useState(false)
+  const [listeAvancesOpen, setListeAvancesOpen] = useState(false)
   const [addExtra, { loading: addingExtra }] = useMutation(ADD_EXTRA)
   const [addDoublage, { loading: addingDoublage }] = useMutation(ADD_DOUBLAGE)
   const [payUser, { loading: payingUser }] = useMutation(PAY_USER)
@@ -728,6 +742,16 @@ export default function PayrollPage() {
       return true;
     });
   }, [listsData?.getExtras, viewPrimesSelectedDepartment, usersMap]);
+
+  const filteredAvancesList = useMemo(() => {
+    const rawAdvances = listsData?.getAdvances || [];
+    return rawAdvances.filter((a: any) => {
+      const user = usersMap.get(String(a.user_id));
+      const userDep = user?.departement || "Autre";
+      if (viewAdvancesSelectedDepartment !== "all" && userDep !== viewAdvancesSelectedDepartment) return false;
+      return true;
+    });
+  }, [listsData?.getAdvances, viewAdvancesSelectedDepartment, usersMap]);
 
   return (
     <div className="flex h-screen overflow-hidden flex-col bg-[#f8f6f1] lg:flex-row">
@@ -1079,7 +1103,10 @@ export default function PayrollPage() {
               </Card>
             )}
             {canSee('payroll', 'stats_avances') && (
-              <Card className="border-[#c9b896] bg-white p-4 shadow-md">
+              <Card
+                className="border-[#c9b896] bg-white p-4 shadow-md cursor-pointer hover:bg-gray-50 transition-colors"
+                onClick={() => setListeAvancesOpen(true)}
+              >
                 <p className="text-sm text-[#6b5744]">Avances {selectedDepartment !== "all" ? `(${selectedDepartment})` : (searchTerm ? "(Filtré)" : "")}</p>
                 <p className="text-2xl font-bold text-[#a0522d]">{globalStats.totalAdvances.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} DT</p>
               </Card>
@@ -1154,6 +1181,12 @@ export default function PayrollPage() {
                 className="bg-cyan-100 text-cyan-700 hover:bg-cyan-200 border border-cyan-200 shadow-sm font-bold"
               >
                 Liste Doublage
+              </Button>
+              <Button
+                onClick={() => setViewAdvancesOpen(true)}
+                className="bg-orange-100 text-orange-700 hover:bg-orange-200 border border-orange-200 shadow-sm font-bold"
+              >
+                Liste Avances
               </Button>
             </div>
             <div className="w-full sm:w-56">
@@ -2101,7 +2134,164 @@ export default function PayrollPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation for Extras/Primes */}
+      {/* Advances View Dialog (Detailed List) */}
+      <Dialog open={viewAdvancesOpen} onOpenChange={setViewAdvancesOpen}>
+        <DialogContent className="bg-white border-[#c9b896] text-[#3d2c1e] max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl shadow-2xl p-0">
+          <div className="sticky top-0 bg-white border-b border-[#c9b896]/30 p-6 z-10 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-orange-600/10 border border-orange-600/20">
+                <DollarSign className="h-6 w-6 text-orange-600" />
+              </div>
+              <div>
+                <DialogTitle className="text-2xl font-bold text-[#8b5a2b]">Détail des Avances</DialogTitle>
+                <p className="text-sm text-[#6b5744]">Toutes les avances de {format(selectedMonth, 'MMMM yyyy', { locale: fr })}</p>
+              </div>
+            </div>
+            <Select value={viewAdvancesSelectedDepartment} onValueChange={setViewAdvancesSelectedDepartment}>
+              <SelectTrigger className="w-[200px] bg-[#f8f6f1] border-[#c9b896]">
+                <SelectValue placeholder="Département" />
+              </SelectTrigger>
+              <SelectContent className="bg-white border-[#c9b896]">
+                <SelectItem value="all">Tous les départements</SelectItem>
+                {departments.map((dep: any) => (
+                  <SelectItem key={dep} value={dep}>{dep}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="p-6">
+            <div className="grid gap-4">
+              {filteredAvancesList.length === 0 ? (
+                <div className="text-center py-12 bg-[#f8f6f1]/50 rounded-2xl border-2 border-dashed border-[#c9b896]/30">
+                  <p className="text-[#6b5744] font-medium italic">Aucune avance enregistrée ce mois-ci.</p>
+                </div>
+              ) : (
+                <div className="overflow-hidden rounded-xl border border-[#c9b896]/30 bg-white">
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-[#f8f6f1] border-b border-[#c9b896]/30">
+                      <tr>
+                        <th className="p-4 text-xs font-black uppercase tracking-widest text-[#8b5a2b]">Employé</th>
+                        <th className="p-4 text-xs font-black uppercase tracking-widest text-[#8b5a2b]">Date</th>
+                        <th className="p-4 text-xs font-black uppercase tracking-widest text-[#8b5a2b]">Motif</th>
+                        <th className="p-4 text-xs font-black uppercase tracking-widest text-[#8b5a2b] text-right">Montant</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#c9b896]/20">
+                      {filteredAvancesList.map((a: any) => (
+                        <tr key={a.id} className="hover:bg-[#f8f6f1]/50 transition-colors">
+                          <td className="p-4">
+                            <div className="flex items-center gap-3">
+                              <div className="h-8 w-8 rounded-full bg-[#8b5a2b] flex items-center justify-center text-white text-xs font-bold">
+                                {a.username?.charAt(0) || "?"}
+                              </div>
+                              <span className="font-bold text-[#3d2c1e]">{a.username || "Inconnu"}</span>
+                            </div>
+                          </td>
+                          <td className="p-4 text-[#6b5744] text-sm">
+                            {format(new Date(a.date), 'dd/MM/yyyy', { locale: fr })}
+                          </td>
+                          <td className="p-4 text-[#6b5744] text-sm italic">
+                            {a.motif || "Avance sur salaire"}
+                          </td>
+                          <td className="p-4 text-right font-black text-[#8b5a2b]">
+                            {a.montant.toLocaleString()} DT
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+            {filteredAvancesList.length > 0 && (
+              <div className="mt-6 flex justify-end">
+                <div className="bg-[#8b5a2b] text-white px-6 py-3 rounded-xl shadow-lg flex items-center gap-8">
+                  <span className="text-sm font-black uppercase tracking-widest opacity-80">Total Global</span>
+                  <span className="text-2xl font-black">
+                    {filteredAvancesList.reduce((acc: number, a: any) => acc + a.montant, 0).toLocaleString()} DT
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Grouped Avances List Dialog (Summary View - Click from Card) */}
+      <Dialog open={listeAvancesOpen} onOpenChange={setListeAvancesOpen}>
+        <DialogContent className="bg-white border-[#c9b896] sm:max-w-[500px] rounded-2xl p-6 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold text-[#8b5a2b] flex items-center gap-2">
+              <DollarSign className="h-5 w-5 text-orange-600" /> Liste des Avances
+            </DialogTitle>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <p className="text-sm text-[#6b5744]">Avances groupées par employé</p>
+              <Select value={viewAdvancesSelectedDepartment} onValueChange={setViewAdvancesSelectedDepartment}>
+                <SelectTrigger className="h-8 w-[140px] text-xs bg-[#f8f6f1] border-[#c9b896]">
+                  <SelectValue placeholder="Département" />
+                </SelectTrigger>
+                <SelectContent className="bg-white border-[#c9b896]">
+                  <SelectItem value="all">Tous les dép.</SelectItem>
+                  {departments.map((dep: any) => (
+                    <SelectItem key={dep} value={dep}>{dep}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </DialogHeader>
+          <div className="mt-4 space-y-3 max-h-[400px] overflow-y-auto pr-2">
+            {(() => {
+              const groupedByUser = new Map<string, { user: any, records: any[], total: number }>();
+              filteredAvancesList.forEach((record: any) => {
+                const userId = String(record.user_id);
+                if (!groupedByUser.has(userId)) {
+                  groupedByUser.set(userId, { user: usersMap.get(userId), records: [], total: 0 });
+                }
+                const group = groupedByUser.get(userId)!;
+                group.records.push(record);
+                group.total += record.montant;
+              });
+
+              if (groupedByUser.size === 0) return <div className="text-center py-8 text-[#6b5744]">Aucune avance trouvée</div>;
+
+              return Array.from(groupedByUser.values()).map(({ user, records, total }) => (
+                <div key={user?.id} className="flex flex-col gap-2 p-4 rounded-xl border border-[#c9b896]/30 bg-[#f8f6f1]/30">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-full overflow-hidden border border-[#c9b896]/50 bg-white">
+                        {user?.photo ? (
+                          <img src={user.photo} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="h-full w-full flex items-center justify-center text-[#8b5a2b] font-bold">
+                            {user?.username?.charAt(0) || "?"}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-bold text-[#3d2c1e] text-sm">{user?.username}</p>
+                        <p className="text-[10px] text-[#6b5744]">Dates des avances:</p>
+                      </div>
+                    </div>
+                    <div className="text-orange-600 font-black text-lg">{total} DT</div>
+                  </div>
+                  <div className="ml-13 mt-2 flex flex-wrap gap-2">
+                    {records.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((record: any, idx: number) => (
+                      <span key={idx} className="text-xs text-[#6b5744] bg-white px-2 py-1 rounded border border-[#c9b896]/30">
+                        {format(new Date(record.date), 'dd/MM/yyyy', { locale: fr })}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ));
+            })()}
+          </div>
+          <div className="mt-6 pt-4 border-t border-[#c9b896]/30 flex justify-between items-center font-black text-[#8b5a2b]">
+            <span>TOTAL GLOBAL</span>
+            <span className="text-xl text-orange-700">{Math.round(filteredAvancesList.reduce((acc: number, a: any) => acc + a.montant, 0)).toLocaleString()} DT</span>
+          </div>
+        </DialogContent>
+      </Dialog>
       <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
         <AlertDialogContent className="bg-white border-[#c9b896] rounded-2xl shadow-2xl">
           <AlertDialogHeader>

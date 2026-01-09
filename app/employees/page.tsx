@@ -34,23 +34,25 @@ const GET_ALL_EMPLOYEES = gql`
         cin
         base_salary
         photo
-        cin_photo_front
-        cin_photo_back
         is_blocked
         nbmonth
         is_coupure
+        is_fixed
       }
       clockIn
       clockOut
       state
       shift
       is_blocked
-      schedule {
+        schedule {
         is_coupure
+        is_fixed
         p1_in
         p1_out
         p2_in
         p2_out
+        fixed_in
+        fixed_out
       }
     }
   }
@@ -117,10 +119,13 @@ const UPDATE_USER_SCHEDULE = gql`
     updateUserSchedule(userId: $userId, schedule: $schedule) {
       user_id
       is_coupure
+      is_fixed
       p1_in
       p1_out
       p2_in
       p2_out
+      fixed_in
+      fixed_out
     }
   }
 `
@@ -182,10 +187,13 @@ function EmployeesContent() {
     cinPhotoBack: "",
     nbmonth: null as number | null,
     isCoupure: false,
+    isFixed: false,
     p1_in: "08:00",
     p1_out: "12:00",
     p2_in: "14:00",
     p2_out: "18:00",
+    fixed_in: "08:00",
+    fixed_out: "17:00",
   })
 
   const [showCinPhotoDialog, setShowCinPhotoDialog] = useState(false)
@@ -209,6 +217,23 @@ function EmployeesContent() {
 
   const [updateUserSchedule] = useMutation(UPDATE_USER_SCHEDULE);
 
+  const { data: cinData, loading: loadingCin, refetch: refetchCin } = useQuery(GET_CIN_CARD, {
+    variables: { userId: selectedEmployee?.id },
+    skip: !selectedEmployee?.id,
+    fetchPolicy: "network-only"
+  });
+
+  // Sync CIN photos to formData when they load and we are in edit mode
+  useEffect(() => {
+    if (showEditDialog && cinData?.getCinCard) {
+      setFormData(prev => ({
+        ...prev,
+        cinPhotoFront: cinData.getCinCard.cin_photo_front || "",
+        cinPhotoBack: cinData.getCinCard.cin_photo_back || ""
+      }));
+    }
+  }, [cinData, showEditDialog]);
+
   // Transform Data
   const employees = useMemo(() => {
     if (!data?.personnelStatus) return [];
@@ -224,16 +249,17 @@ function EmployeesContent() {
       status: p.state === "Avec Pointage" ? "IN" : "OUT",
       baseSalary: p.user.base_salary || 0,
       photo: p.user.photo || "",
-      cinPhotoFront: p.user.cin_photo_front || "",
-      cinPhotoBack: p.user.cin_photo_back || "",
       is_blocked: !!p.user.is_blocked,
       nbmonth: p.user.nbmonth || null,
       managerId: null,
       isCoupure: p.schedule?.is_coupure || false,
+      isFixed: p.schedule?.is_fixed || false,
       p1_in: p.schedule?.p1_in || "08:00",
       p1_out: p.schedule?.p1_out || "12:00",
       p2_in: p.schedule?.p2_in || "14:00",
       p2_out: p.schedule?.p2_out || "18:00",
+      fixed_in: p.schedule?.fixed_in || "08:00",
+      fixed_out: p.schedule?.fixed_out || "17:00",
     }));
   }, [data]);
 
@@ -270,16 +296,21 @@ function EmployeesContent() {
     return () => clearInterval(interval);
   }, [userIdParam, employees.length > 0]);
 
-  const filteredEmployees = employees.filter((employee: any) => {
-    const matchesSearch =
-      employee.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      employee.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      employee.department.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredEmployees = employees
+    .filter((employee: any) => {
+      const matchesSearch =
+        employee.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        employee.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        employee.department.toLowerCase().includes(searchQuery.toLowerCase())
 
-    const matchesDepartment = selectedDepartment === "all" || employee.department === selectedDepartment
+      const matchesDepartment = selectedDepartment === "all" || employee.department === selectedDepartment
 
-    return matchesSearch && matchesDepartment
-  })
+      return matchesSearch && matchesDepartment
+    })
+    .sort((a: any, b: any) => {
+      if (a.is_blocked === b.is_blocked) return 0;
+      return a.is_blocked ? 1 : -1;
+    })
 
   const uniqueDepartments = useMemo(() => {
     const fromEmployees = employees.map((e: any) => e.department).filter(Boolean);
@@ -303,46 +334,53 @@ function EmployeesContent() {
       cinPhotoBack: "",
       nbmonth: null,
       isCoupure: false,
+      isFixed: false,
       p1_in: "08:00",
       p1_out: "12:00",
       p2_in: "14:00",
       p2_out: "18:00",
+      fixed_in: "08:00",
+      fixed_out: "17:00",
     })
   }
 
   const compressImage = (file: File, maxWidth = 1200, quality = 0.7): Promise<string> => {
     return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = (event) => {
-        const img = new Image();
-        img.src = event.target?.result as string;
-        img.onload = () => {
-          const canvas = document.createElement("canvas");
-          let width = img.width;
-          let height = img.height;
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.src = url;
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const canvas = document.createElement("canvas");
+        let width = img.width;
+        let height = img.height;
 
-          if (width > height) {
-            if (width > maxWidth) {
-              height = Math.round((height * maxWidth) / width);
-              width = maxWidth;
-            }
-          } else {
-            if (height > maxWidth) {
-              width = Math.round((width * maxWidth) / height);
-              height = maxWidth;
-            }
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
           }
+        } else {
+          if (height > maxWidth) {
+            width = Math.round((width * maxWidth) / height);
+            height = maxWidth;
+          }
+        }
 
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext("2d");
-          ctx?.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL("image/jpeg", quality));
-        };
-        img.onerror = (err) => reject(err);
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Could not get canvas context"));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
       };
-      reader.onerror = (err) => reject(err);
+      img.onerror = (err) => {
+        URL.revokeObjectURL(url);
+        reject(err);
+      };
     });
   };
 
@@ -427,7 +465,8 @@ function EmployeesContent() {
             base_salary: formData.baseSalary ? parseFloat(formData.baseSalary) : 0,
             photo: formData.photo,
             nbmonth: formData.nbmonth,
-            is_coupure: formData.isCoupure
+            is_coupure: formData.isCoupure,
+            is_fixed: formData.isFixed
           }
         }
       });
@@ -451,10 +490,13 @@ function EmployeesContent() {
             userId: newUserId,
             schedule: {
               is_coupure: formData.isCoupure,
+              is_fixed: formData.isFixed,
               p1_in: formData.p1_in,
               p1_out: formData.p1_out,
               p2_in: formData.p2_in,
-              p2_out: formData.p2_out
+              p2_out: formData.p2_out,
+              fixed_in: formData.fixed_in,
+              fixed_out: formData.fixed_out
             }
           }
         });
@@ -488,10 +530,13 @@ function EmployeesContent() {
       cinPhotoBack: employee.cinPhotoBack || "",
       nbmonth: employee.nbmonth || null,
       isCoupure: employee.isCoupure || false,
+      isFixed: employee.isFixed || false,
       p1_in: employee.p1_in || "08:00",
       p1_out: employee.p1_out || "12:00",
       p2_in: employee.p2_in || "14:00",
       p2_out: employee.p2_out || "18:00",
+      fixed_in: employee.fixed_in || "08:00",
+      fixed_out: employee.fixed_out || "17:00",
     })
     setShowEditDialog(true)
   }
@@ -515,7 +560,8 @@ function EmployeesContent() {
             base_salary: formData.baseSalary ? parseFloat(formData.baseSalary) : 0,
             photo: formData.photo,
             nbmonth: formData.nbmonth,
-            is_coupure: formData.isCoupure
+            is_coupure: formData.isCoupure,
+            is_fixed: formData.isFixed
           }
         }
       })
@@ -529,6 +575,7 @@ function EmployeesContent() {
             cinPhotoBack: formData.cinPhotoBack || null
           }
         });
+        await refetchCin();
       }
 
       // Update Schedule
@@ -537,10 +584,13 @@ function EmployeesContent() {
           userId: selectedEmployee.id,
           schedule: {
             is_coupure: formData.isCoupure,
+            is_fixed: formData.isFixed,
             p1_in: formData.p1_in,
             p1_out: formData.p1_out,
             p2_in: formData.p2_in,
-            p2_out: formData.p2_out
+            p2_out: formData.p2_out,
+            fixed_in: formData.fixed_in,
+            fixed_out: formData.fixed_out
           }
         }
       });
@@ -1086,13 +1136,13 @@ function EmployeesContent() {
             <div className="sm:col-span-2 pt-6 mt-4 border-t border-[#c9b896]/20">
               <label className="text-base sm:text-lg font-bold text-[#3d2c1e] mb-4 block">Mode de Pointage</label>
 
-              <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
                 <Button
                   type="button"
-                  onClick={() => setFormData({ ...formData, isCoupure: false })}
+                  onClick={() => setFormData({ ...formData, isCoupure: false, isFixed: false })}
                   className={cn(
                     "h-14 rounded-xl text-base font-bold transition-all border-2",
-                    !formData.isCoupure
+                    (!formData.isCoupure && !formData.isFixed)
                       ? "bg-[#8b5a2b] text-white border-[#8b5a2b] shadow-lg scale-[1.02]"
                       : "bg-white text-[#8b5a2b] border-[#c9b896]/30 hover:bg-[#8b5a2b]/5"
                   )}
@@ -1101,7 +1151,7 @@ function EmployeesContent() {
                 </Button>
                 <Button
                   type="button"
-                  onClick={() => setFormData({ ...formData, isCoupure: true })}
+                  onClick={() => setFormData({ ...formData, isCoupure: true, isFixed: false })}
                   className={cn(
                     "h-14 rounded-xl text-base font-bold transition-all border-2",
                     formData.isCoupure
@@ -1111,7 +1161,45 @@ function EmployeesContent() {
                 >
                   Mode Coupure
                 </Button>
+                <Button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, isFixed: true, isCoupure: false })}
+                  className={cn(
+                    "h-14 rounded-xl text-base font-bold transition-all border-2",
+                    formData.isFixed
+                      ? "bg-[#8b5a2b] text-white border-[#8b5a2b] shadow-lg scale-[1.02]"
+                      : "bg-white text-[#8b5a2b] border-[#c9b896]/30 hover:bg-[#8b5a2b]/5"
+                  )}
+                >
+                  Mode Fixe
+                </Button>
               </div>
+
+              {formData.isFixed && (
+                <div className="bg-[#8b5a2b]/5 p-6 rounded-2xl border border-[#8b5a2b]/10 animate-in fade-in slide-in-from-top-4 duration-500 mb-6">
+                  <p className="text-sm font-bold text-[#8b5a2b] mb-4 uppercase tracking-wider">Horaires Fixes Personnalisés</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-[#3d2c1e]">Heure d'entrée</label>
+                      <Input
+                        type="time"
+                        value={formData.fixed_in}
+                        onChange={(e) => setFormData({ ...formData, fixed_in: e.target.value })}
+                        className="bg-white border-[#c9b896]/30 h-11 text-base font-medium focus:ring-[#8b5a2b]"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-[#3d2c1e]">Heure de sortie</label>
+                      <Input
+                        type="time"
+                        value={formData.fixed_out}
+                        onChange={(e) => setFormData({ ...formData, fixed_out: e.target.value })}
+                        className="bg-white border-[#c9b896]/30 h-11 text-base font-medium focus:ring-[#8b5a2b]"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {formData.isCoupure && (
                 <div className="bg-[#8b5a2b]/5 p-6 rounded-2xl border border-[#8b5a2b]/10 animate-in fade-in slide-in-from-top-4 duration-500">
@@ -1309,37 +1397,43 @@ function EmployeesContent() {
                       </p>
                     </div>
 
-                    {(selectedEmployee.cinPhotoFront || selectedEmployee.cinPhotoBack) && (
+                    {(cinData?.getCinCard?.cin_photo_front || cinData?.getCinCard?.cin_photo_back) && (
                       <div className="sm:col-span-2 space-y-3 sm:space-y-4 pt-2">
                         <p className="text-xs sm:text-sm text-[#6b5744] uppercase tracking-wider">Documents CIN</p>
                         <div className="grid grid-cols-2 gap-3 sm:gap-4">
-                          {selectedEmployee.cinPhotoFront && (
+                          {cinData.getCinCard.cin_photo_front && (
                             <div className="flex flex-col gap-2">
                               <div className="h-28 sm:h-32 md:h-36 rounded-lg bg-white border border-[#c9b896]/30 overflow-hidden shadow-sm cursor-pointer hover:shadow-md transition-shadow"
                                 onClick={() => {
-                                  setCinPhotoToView(selectedEmployee.cinPhotoFront)
+                                  setCinPhotoToView(cinData.getCinCard.cin_photo_front)
                                   setShowCinPhotoDialog(true)
                                 }}
                               >
-                                <img src={selectedEmployee.cinPhotoFront} className="w-full h-full object-cover" alt="CIN Front" />
+                                <img src={cinData.getCinCard.cin_photo_front} className="w-full h-full object-cover" alt="CIN Front" />
                               </div>
                               <span className="text-[10px] sm:text-xs text-center font-bold text-[#8b5a2b]/60 uppercase tracking-tight">Recto (Face)</span>
                             </div>
                           )}
-                          {selectedEmployee.cinPhotoBack && (
+                          {cinData.getCinCard.cin_photo_back && (
                             <div className="flex flex-col gap-2">
                               <div className="h-28 sm:h-32 md:h-36 rounded-lg bg-white border border-[#c9b896]/30 overflow-hidden shadow-sm cursor-pointer hover:shadow-md transition-shadow"
                                 onClick={() => {
-                                  setCinPhotoToView(selectedEmployee.cinPhotoBack)
+                                  setCinPhotoToView(cinData.getCinCard.cin_photo_back)
                                   setShowCinPhotoDialog(true)
                                 }}
                               >
-                                <img src={selectedEmployee.cinPhotoBack} className="w-full h-full object-cover" alt="CIN Back" />
+                                <img src={cinData.getCinCard.cin_photo_back} className="w-full h-full object-cover" alt="CIN Back" />
                               </div>
                               <span className="text-[10px] sm:text-xs text-center font-bold text-[#8b5a2b]/60 uppercase tracking-tight">Verso (Dos)</span>
                             </div>
                           )}
                         </div>
+                      </div>
+                    )}
+                    {loadingCin && (
+                      <div className="sm:col-span-2 flex items-center justify-center py-4">
+                        <Loader2 className="h-6 w-6 animate-spin text-[#8b5a2b]" />
+                        <span className="ml-2 text-sm text-[#8b5a2b]">Chargement des documents...</span>
                       </div>
                     )}
                   </div>

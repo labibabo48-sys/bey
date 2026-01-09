@@ -23,6 +23,7 @@ const typeDefs = `#graphql
     is_blocked: Boolean
     nbmonth: Int
     is_coupure: Boolean
+    is_fixed: Boolean
   }
 
   type Attendance {
@@ -77,6 +78,9 @@ const typeDefs = `#graphql
     p1_out: String
     p2_in: String
     p2_out: String
+    is_fixed: Boolean
+    fixed_in: String
+    fixed_out: String
   }
 
   input ScheduleInput {
@@ -92,6 +96,9 @@ const typeDefs = `#graphql
     p1_out: String
     p2_in: String
     p2_out: String
+    is_fixed: Boolean
+    fixed_in: String
+    fixed_out: String
   }
 
   type Advance {
@@ -149,6 +156,7 @@ const typeDefs = `#graphql
     permissions: String
     nbmonth: Int
     is_coupure: Boolean
+    is_fixed: Boolean
   }
 
   type Extra {
@@ -590,6 +598,7 @@ const ensureUsersSchema = async () => {
   usersSchemaPromise = (async () => {
     try {
       await pool.query('ALTER TABLE public.users ADD COLUMN IF NOT EXISTS is_coupure BOOLEAN DEFAULT false');
+      await pool.query('ALTER TABLE public.users ADD COLUMN IF NOT EXISTS is_fixed BOOLEAN DEFAULT false');
     } catch (e) {
       console.error("ensureUsersSchema error:", e);
     }
@@ -637,10 +646,13 @@ const ensureStaticIndexes = async () => {
       // Ensure user_schedules has new columns
       try {
         await pool.query(`ALTER TABLE public.user_schedules ADD COLUMN IF NOT EXISTS is_coupure BOOLEAN DEFAULT FALSE`);
+        await pool.query(`ALTER TABLE public.user_schedules ADD COLUMN IF NOT EXISTS is_fixed BOOLEAN DEFAULT FALSE`);
         await pool.query(`ALTER TABLE public.user_schedules ADD COLUMN IF NOT EXISTS p1_in VARCHAR(10)`);
         await pool.query(`ALTER TABLE public.user_schedules ADD COLUMN IF NOT EXISTS p1_out VARCHAR(10)`);
         await pool.query(`ALTER TABLE public.user_schedules ADD COLUMN IF NOT EXISTS p2_in VARCHAR(10)`);
         await pool.query(`ALTER TABLE public.user_schedules ADD COLUMN IF NOT EXISTS p2_out VARCHAR(10)`);
+        await pool.query(`ALTER TABLE public.user_schedules ADD COLUMN IF NOT EXISTS fixed_in VARCHAR(10)`);
+        await pool.query(`ALTER TABLE public.user_schedules ADD COLUMN IF NOT EXISTS fixed_out VARCHAR(10)`);
       } catch (e) { }
     } catch (e) {
       console.error("Index creation error:", e);
@@ -896,7 +908,7 @@ async function recomputePayrollForDate(targetDateStr: string, specificUserId: st
   const subParams = specificUserId ? [dateSQL, nextDateSQL, specificUserId] : [dateSQL, nextDateSQL];
 
   const [usersRes, schedulesRes, allPunches, retardsRes, absentsRes, advancesRes, extrasRes, doublagesRes, notificationsRes] = await Promise.all([
-    pool.query(specificUserId ? 'SELECT id, username, "département" as departement, is_coupure FROM public.users WHERE id = $1' : 'SELECT id, username, "département" as departement, is_coupure FROM public.users', specificUserId ? [specificUserId] : []),
+    pool.query(specificUserId ? 'SELECT id, username, "département" as departement, is_coupure, is_fixed FROM public.users WHERE id = $1' : 'SELECT id, username, "département" as departement, is_coupure, is_fixed FROM public.users', specificUserId ? [specificUserId] : []),
     pool.query(specificUserId ? 'SELECT * FROM public.user_schedules WHERE user_id = $1' : 'SELECT * FROM public.user_schedules', specificUserId ? [specificUserId] : []),
     fetchDayPunches(logicalDay, specificUserId),
     pool.query(`SELECT * FROM public.retards WHERE date >= $1 AND date < $2 ${userClause}`, subParams),
@@ -1152,7 +1164,44 @@ async function recomputePayrollForDate(targetDateStr: string, specificUserId: st
         }
       }
 
-      if (!isCoupure && user.departement !== 'Chef_Cuisine') {
+      // MODE FIXE LOGIC
+      const isFixed = (!!schedule?.is_fixed) || (!!user.is_fixed);
+      if (isFixed && !isCoupure && user.departement !== 'Chef_Cuisine') {
+        const s_fixed_in = schedule?.fixed_in || "08:00";
+        const s_fixed_out = schedule?.fixed_out || "17:00";
+
+        if (userPunches.length === 0) {
+          const shiftStartTimeAbs = new Date(`${dateSQL}T${s_fixed_in}:00.000+01:00`);
+          const thresholdTime = new Date(shiftStartTimeAbs.getTime() + 30 * 60000);
+
+          if (isPastDay || todayNow > thresholdTime) {
+            isAbsent = true;
+            reason = `Absence injustifiée (Fixe @ ${s_fixed_in})`;
+          }
+        } else {
+          const firstP = userPunches[0];
+          const firstD = parseMachineDate(firstP.device_time);
+          const shiftStartTime = new Date(`${dateSQL}T${s_fixed_in}:00.000+01:00`);
+
+          if (firstD > shiftStartTime) {
+            const diffMs = firstD.getTime() - shiftStartTime.getTime();
+            const diffMins = Math.floor(diffMs / 60000);
+            if (diffMins > 0) {
+              isRetard = true;
+              reason = formatDuration(diffMins);
+              calculatedRetardMins = diffMins;
+            }
+          }
+
+          if (isPastDay && userPunches.length % 2 !== 0) {
+            isAbsent = true;
+            isRetard = false;
+            reason = "Pointage de sortie manquant (Fixe)";
+          }
+        }
+      }
+
+      if (!isCoupure && !isFixed && user.departement !== 'Chef_Cuisine') {
         const sTypeUpper = (shiftType || "").toUpperCase();
         let startHour = 7;
         if (sTypeUpper === "SOIR") startHour = 16;

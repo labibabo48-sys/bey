@@ -113,17 +113,38 @@ export default function AllSchedulesPlacementPage() {
     }, [schedules, searchQuery])
 
     const depts = useMemo(() => {
-        const list = new Set(filteredSchedules.map((s: any) => s.departement || "Autre"))
+        const list = new Set(
+            filteredSchedules
+                .map((s: any) => s.departement || "Non assigné")
+                .filter((d: string) => d.toLowerCase() !== "autre")
+        )
 
-        // Helper to generate sort sortKey
-        const getSortKey = (d: string) => {
-            if (d === "Cuisine") return "Chef_Cuisine_1"; // Force Cuisine to follow Chef_Cuisine
-            if (d === "Chef_Cuisine") return "Chef_Cuisine_0"; // Ensure Chef_Cuisine is the anchor
-            return d;
-        };
+        const ORDER = [
+            "serveur",
+            "comi_serveur",
+            "bar",
+            "chef_cuisine",
+            "cuisine",
+            "patisserie",
+            "pizzaria",
+            "chicha",
+            "menage_matin",
+            "menage_soir",
+            "gestion_stock",
+            "responsable",
+            "securite",
+            "non assigné"
+        ];
 
         return Array.from(list).sort((a: any, b: any) => {
-            return getSortKey(a).localeCompare(getSortKey(b));
+            const aIdx = ORDER.indexOf(a.toLowerCase());
+            const bIdx = ORDER.indexOf(b.toLowerCase());
+
+            if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx;
+            if (aIdx !== -1) return -1;
+            if (bIdx !== -1) return 1;
+
+            return a.localeCompare(b);
         })
     }, [filteredSchedules])
 

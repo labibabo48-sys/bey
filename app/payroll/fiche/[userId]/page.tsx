@@ -666,9 +666,12 @@ export default function UserFichePage() {
                                         <tbody>
                                             <tr><td className="border border-[#3d2c1e] p-1.5 print:p-0.5 font-bold">Avances (Acomptes)</td><td className="border border-[#3d2c1e] p-1.5 print:p-0.5 text-right font-black text-red-600">-{stats.totalAdvances.toLocaleString('fr-FR', { minimumFractionDigits: 1 })} DT</td></tr>
                                             <tr><td className="border border-[#3d2c1e] p-1.5 print:p-0.5 font-bold">Infractions</td><td className="border border-[#3d2c1e] p-1.5 print:p-0.5 text-right font-black text-red-600">-{stats.totalInfractions.toLocaleString('fr-FR', { minimumFractionDigits: 1 })} DT</td></tr>
-                                            <tr className="bg-[#8b5a2b] text-white">
+                                            <tr className={cn(
+                                                "text-white",
+                                                stats.isPaid ? "bg-emerald-600" : "bg-[#8b5a2b]"
+                                            )}>
                                                 <td className="border border-[#3d2c1e] p-2 print:p-1 text-sm font-black uppercase flex items-center gap-2">
-                                                    Net à Payer
+                                                    {stats.isPaid ? "Payé" : "Net à Payer"}
                                                     {!stats.isPaid && <Edit2 className="h-3 w-3 cursor-pointer hover:text-white/80 print:hidden" onClick={() => { setManualNetValue(stats.netSalary.toString()); setIsOverrideDialogOpen(true); }} />}
                                                 </td>
                                                 <td className="border border-[#3d2c1e] p-2 print:p-1 text-lg print:text-base text-right font-black">
