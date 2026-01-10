@@ -248,7 +248,7 @@ const typeDefs = `#graphql
     login(username: String!, password: String!): LoginResult
     getCinCard(userId: ID!): CardCin
     getUserPhoto(userId: ID!): User
-    getNotifications(userId: ID, limit: Int): [Notification]
+    getNotifications(userId: ID, limit: Int, excludeMachine: Boolean, onlyMachine: Boolean): [Notification]
   }
 
   type LoginResult {
@@ -1724,15 +1724,29 @@ const resolvers = {
         date: formatDateTimeLocal(r.date)
       }));
     },
-    getNotifications: async (_: any, { userId, limit }: { userId?: string, limit?: number }) => {
+    getNotifications: async (_: any, { userId, limit, excludeMachine, onlyMachine }: { userId?: string, limit?: number, excludeMachine?: boolean, onlyMachine?: boolean }) => {
       try {
         await ensureNotificationsTable();
         let q = 'SELECT id, type, title, message, timestamp, read, user_id, user_done as "userDone", url FROM public.notifications';
         const params = [];
+        const conditions = [];
+
         if (userId) {
-          q += ' WHERE user_id = $1 OR user_id IS NULL';
+          conditions.push(`(user_id = $${params.length + 1} OR user_id IS NULL)`);
           params.push(userId);
         }
+
+        // Filter by machine notifications
+        if (excludeMachine) {
+          conditions.push(`(user_done != 'Machine ZKTeco' OR user_done IS NULL)`);
+        } else if (onlyMachine) {
+          conditions.push(`user_done = 'Machine ZKTeco'`);
+        }
+
+        if (conditions.length > 0) {
+          q += ' WHERE ' + conditions.join(' AND ');
+        }
+
         q += ' ORDER BY id DESC';
         if (limit) {
           q += ` LIMIT ${limit}`;

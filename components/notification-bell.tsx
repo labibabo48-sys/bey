@@ -19,8 +19,8 @@ import { gql, useQuery, useMutation } from "@apollo/client"
 import { cn } from "@/lib/utils"
 
 const GET_NOTIFICATIONS = gql`
-  query GetNotifications($userId: ID, $limit: Int) {
-    getNotifications(userId: $userId, limit: $limit) {
+  query GetNotifications($userId: ID, $limit: Int, $excludeMachine: Boolean, $onlyMachine: Boolean) {
+    getNotifications(userId: $userId, limit: $limit, excludeMachine: $excludeMachine, onlyMachine: $onlyMachine) {
       id
       type
       title
@@ -201,15 +201,35 @@ export function NotificationBell() {
   }
   const canViewNotifications = currentUser?.role === 'admin' || permissions?.notifications?.view !== false;
 
-  const { data, loading, refetch } = useQuery(GET_NOTIFICATIONS, {
+  const isAdminOrManager = ['admin', 'manager'].includes(currentUser?.role || '');
+
+  // Separate queries for manager and machine notifications
+  const { data: managerData, loading: managerLoading, refetch: refetchManager } = useQuery(GET_NOTIFICATIONS, {
     variables: {
-      userId: ['admin', 'manager'].includes(currentUser?.role || '') ? null : currentUser?.id,
-      limit: 100
+      userId: isAdminOrManager ? null : currentUser?.id,
+      limit: 100,
+      excludeMachine: true
     },
     pollInterval: 60000,
     fetchPolicy: "cache-and-network",
-    skip: !canViewNotifications // Skip query if no permission
+    skip: !canViewNotifications
   });
+
+  const { data: machineData, loading: machineLoading, refetch: refetchMachine } = useQuery(GET_NOTIFICATIONS, {
+    variables: {
+      userId: isAdminOrManager ? null : currentUser?.id,
+      limit: 100,
+      onlyMachine: true
+    },
+    pollInterval: 60000,
+    fetchPolicy: "cache-and-network",
+    skip: !canViewNotifications
+  });
+
+  // Refetch both
+  const refetch = async () => {
+    await Promise.all([refetchManager(), refetchMachine()]);
+  };
 
   // Split optimistic state
   const [optimisticMachineRead, setOptimisticMachineRead] = useState(false);
@@ -222,23 +242,16 @@ export function NotificationBell() {
 
   if (!canViewNotifications) return null;
 
-  const allNotifications = useMemo(() => data?.getNotifications || [], [data]);
-
-  const machineNotifications = useMemo(() =>
-    allNotifications.filter((n: any) => n.userDone === 'Machine ZKTeco'),
-    [allNotifications]);
-
-  const managerNotifications = useMemo(() =>
-    allNotifications.filter((n: any) => n.userDone !== 'Machine ZKTeco'),
-    [allNotifications]);
+  const managerNotifications = useMemo(() => managerData?.getNotifications || [], [managerData]);
+  const machineNotifications = useMemo(() => machineData?.getNotifications || [], [machineData]);
 
   // Reset optimistic state when data actually updates from server
   useEffect(() => {
-    if (data) {
+    if (managerData || machineData) {
       setOptimisticMachineRead(false);
       setOptimisticManagerRead(false);
     }
-  }, [data]);
+  }, [managerData, machineData]);
 
   // New Bulk Mutation
   const [markListRead] = useMutation(gql`
