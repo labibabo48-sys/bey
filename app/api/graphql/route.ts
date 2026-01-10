@@ -1262,11 +1262,12 @@ async function recomputePayrollForDate(targetDateStr: string, specificUserId: st
     // Determine state and reasons...
     // Only update tables if NOT manually updated
     if (!isManuallyUpdated) {
-      if (shiftType !== "Repos") {
-        // Clear potential conflictual records before re-inserting
-        await pool.query('DELETE FROM public.absents WHERE user_id = $1 AND date = $2', [user.id, dateSQL]);
-        await pool.query('DELETE FROM public.retards WHERE date::date = $1 AND user_id = $2', [dateSQL, user.id]);
+      // ALWAYS clear potential conflictual records first.
+      // This ensures if a user moves TO Repos, their old "Absent" record is cleared.
+      await pool.query('DELETE FROM public.absents WHERE user_id = $1 AND date = $2', [user.id, dateSQL]);
+      await pool.query('DELETE FROM public.retards WHERE date::date = $1 AND user_id = $2', [dateSQL, user.id]);
 
+      if (shiftType !== "Repos") {
         if (isAbsent) {
           await pool.query(`
               INSERT INTO public.absents(user_id, username, date, type, reason) 
@@ -1371,6 +1372,12 @@ async function recomputePayrollForDate(targetDateStr: string, specificUserId: st
 
     // Final Remark prioritization
     let finalRemark = (isAbsent || isRetard) ? reason : null;
+
+    // Explicitly set Repos as remark if applicable
+    if (shiftType === "Repos" && userPunches.length === 0) {
+      finalRemark = "Repos";
+    }
+
     if (!finalRemark) {
       finalRemark = currentRetard?.reason || currentAbsent?.reason || null;
     }
