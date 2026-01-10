@@ -3520,7 +3520,9 @@ const resolvers = {
       // Expanded role check for safety
       if (['admin', 'manager', 'administrateur', 'superadmin'].includes(effectiveRole)) {
         // Admins/Managers see ALL notifications
-        await pool.query('UPDATE public.notifications SET read = TRUE');
+        // UPDATE: User wants Manager "Mark All" to NOT affect Machine notifications (which have their own bell)
+        // So we filter OUT 'Machine ZKTeco' from this global clear.
+        await pool.query("UPDATE public.notifications SET read = TRUE WHERE user_done != 'Machine ZKTeco' OR user_done IS NULL");
       } else {
         // Regular users only clear their own notifications
         // Ensure dbId is numeric to prevent SQL injection or type errors
