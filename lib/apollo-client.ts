@@ -10,8 +10,8 @@ const createApolloClient = () => {
             try {
                 const stored = window.localStorage.getItem("business_bey_user");
                 if (stored) {
-                    const user = JSON.parse(stored);
-                    userName = user.name || user.username || user.displayName || (user.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : "") || "";
+                    const parsedUser = JSON.parse(stored);
+                    userName = parsedUser.name || parsedUser.username || parsedUser.displayName || (parsedUser.firstName ? `${parsedUser.firstName} ${parsedUser.lastName || ''}`.trim() : "") || "";
                 }
             } catch (e) { }
         }
