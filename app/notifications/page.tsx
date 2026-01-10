@@ -11,8 +11,8 @@ import { Bell, Clock, DollarSign, Calendar, Settings, CheckCheck, Trash2 } from 
 import { gql, useQuery, useMutation } from "@apollo/client"
 
 const GET_NOTIFICATIONS = gql`
-  query GetNotifications($userId: ID, $limit: Int) {
-    getNotifications(userId: $userId, limit: $limit) {
+  query GetNotifications($userId: ID, $limit: Int, $excludeMachine: Boolean) {
+    getNotifications(userId: $userId, limit: $limit, excludeMachine: $excludeMachine) {
       id
       type
       title
@@ -43,7 +43,8 @@ export default function NotificationsPage() {
   const { data, loading, refetch, startPolling, stopPolling } = useQuery(GET_NOTIFICATIONS, {
     variables: {
       userId: isAdminOrManager ? null : currentUser?.id,
-      limit: 100
+      limit: 100,
+      excludeMachine: true
     },
     pollInterval: 60000,
     fetchPolicy: "cache-and-network"
@@ -65,11 +66,7 @@ export default function NotificationsPage() {
   const [markRead] = useMutation(MARK_READ);
   const [deleteOld] = useMutation(DELETE_OLD);
 
-  const allNotifications = useMemo(() => {
-    const list = data?.getNotifications || [];
-    // User requested to see ONLY "Notification Manager" type things here, NOT Machine logs
-    return list.filter((n: any) => n.userDone !== 'Machine ZKTeco');
-  }, [data]);
+  const allNotifications = useMemo(() => data?.getNotifications || [], [data]);
 
   // Group notifications by month
   const notificationsByMonth = useMemo(() => {
