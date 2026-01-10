@@ -1436,15 +1436,31 @@ async function recomputePayrollForDate(targetDateStr: string, specificUserId: st
         $10::int[], $11::date[], $12::text[], $13::text[], $14::text[], $15::boolean[], $16::text[], $17::text[], $18::text[], $19::text[]
       )
       ON CONFLICT(user_id, date) DO UPDATE SET
-        present = CASE WHEN public."${payrollTableName}".updated = TRUE THEN public."${payrollTableName}".present ELSE EXCLUDED.present END,
+        present = CASE 
+          WHEN EXCLUDED.remarque = 'Repos' THEN 0 
+          WHEN public."${payrollTableName}".updated = TRUE THEN public."${payrollTableName}".present 
+          ELSE EXCLUDED.present 
+        END,
         acompte = EXCLUDED.acompte,
         extra = EXCLUDED.extra,
         prime = EXCLUDED.prime,
         infraction = EXCLUDED.infraction,
         doublage = EXCLUDED.doublage,
-        mise_a_pied = CASE WHEN public."${payrollTableName}".updated = TRUE THEN public."${payrollTableName}".mise_a_pied ELSE EXCLUDED.mise_a_pied END,
-        retard = CASE WHEN public."${payrollTableName}".updated = TRUE THEN public."${payrollTableName}".retard ELSE EXCLUDED.retard END,
-        remarque = CASE WHEN public."${payrollTableName}".updated = TRUE THEN public."${payrollTableName}".remarque ELSE EXCLUDED.remarque END,
+        mise_a_pied = CASE 
+          WHEN EXCLUDED.remarque = 'Repos' THEN 0 
+          WHEN public."${payrollTableName}".updated = TRUE THEN public."${payrollTableName}".mise_a_pied 
+          ELSE EXCLUDED.mise_a_pied 
+        END,
+        retard = CASE 
+          WHEN EXCLUDED.remarque = 'Repos' THEN 0 
+          WHEN public."${payrollTableName}".updated = TRUE THEN public."${payrollTableName}".retard 
+          ELSE EXCLUDED.retard 
+        END,
+        remarque = CASE 
+          WHEN EXCLUDED.remarque = 'Repos' THEN 'Repos' 
+          WHEN public."${payrollTableName}".updated = TRUE THEN public."${payrollTableName}".remarque 
+          ELSE EXCLUDED.remarque 
+        END,
         clock_in = CASE WHEN public."${payrollTableName}".updated = TRUE THEN public."${payrollTableName}".clock_in ELSE EXCLUDED.clock_in END,
         clock_out = CASE WHEN public."${payrollTableName}".updated = TRUE THEN public."${payrollTableName}".clock_out ELSE EXCLUDED.clock_out END,
         updated = CASE WHEN EXCLUDED.updated = TRUE THEN TRUE ELSE public."${payrollTableName}".updated END,
