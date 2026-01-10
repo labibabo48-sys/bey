@@ -3522,9 +3522,12 @@ const resolvers = {
       if (numericIds.length === 0) return true;
 
       try {
-        // Use standard ANY($1) - pg driver handles JS array -> Postgres array
-        const res = await pool.query('UPDATE public.notifications SET read = TRUE WHERE id = ANY($1)', [numericIds]);
-        console.log("Update success, rows affected:", res.rowCount);
+        // Fallback: Iterative update to guarantee execution per row
+        // since array binding seems to be failing silently or with types
+        for (const id of numericIds) {
+          await pool.query('UPDATE public.notifications SET read = TRUE WHERE id = $1', [id]);
+        }
+        console.log("Update success, iterated over", numericIds.length, "rows");
       } catch (err) {
         console.error("markNotificationsListAsRead DB Error:", err);
       }
