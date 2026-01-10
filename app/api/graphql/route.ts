@@ -298,6 +298,7 @@ const typeDefs = `#graphql
     deleteLoginAccount(id: ID!): Boolean
     migratePayrollUpdatedColumn(month: String!): Boolean
     markNotificationsAsRead(userId: ID!): Boolean
+    markNotificationsListAsRead(ids: [ID]!): Boolean
     markNotificationAsRead(id: ID!): Boolean
     deleteOldNotifications: Boolean
     pardonLate(userId: ID!, date: String!): PayrollRecord
@@ -3508,6 +3509,12 @@ const resolvers = {
     },
     markNotificationAsRead: async (_: any, { id }: { id: string }) => {
       await pool.query('UPDATE public.notifications SET read = TRUE WHERE id = $1', [id]);
+      return true;
+    },
+    markNotificationsListAsRead: async (_: any, { ids }: { ids: string[] }) => {
+      if (!ids || ids.length === 0) return true;
+      // Use "WHERE id = ANY($1)" for efficient array matching
+      await pool.query('UPDATE public.notifications SET read = TRUE WHERE id = ANY($1)', [ids]);
       return true;
     },
     deleteOldNotifications: async () => {

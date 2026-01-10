@@ -163,7 +163,7 @@ const NotificationDropdown = ({
                       <div className="flex items-center justify-between mt-3">
                         <div className="flex items-center gap-2">
                           {notification.userDone && (
-                            <span className="text-[9px] font-black text-[#6b5744]/60 uppercase tracking-tighter bg-white px-1.5 py-0.5 rounded border border-[#c9b896]/20">
+                            <span className="text-[10px] font-black text-red-600 uppercase tracking-tighter bg-red-50 px-1.5 py-0.5 rounded border border-red-200">
                               Par: {notification.userDone}
                             </span>
                           )}
@@ -240,9 +240,14 @@ export function NotificationBell() {
     }
   }, [data]);
 
+  // New Bulk Mutation
+  const [markListRead] = useMutation(gql`
+    mutation MarkNotificationsListAsRead($ids: [ID]!) {
+      markNotificationsListAsRead(ids: $ids)
+    }
+  `);
+
   // Helper to mark a specific list as read (client-side loop for granular control)
-  // Since the backend 'markAll' clears everything, we simulate "Mark Section as Read"
-  // by marking distinct IDs. This is safer than modifying the backend schema right now.
   const handleMarkListAsRead = async (e: React.MouseEvent, list: any[], setOptimistic: (v: boolean) => void) => {
     e.stopPropagation();
     setOptimistic(true); // Force immediate UI feedback
@@ -252,13 +257,14 @@ export function NotificationBell() {
 
     if (unreadIds.length === 0) return;
 
-    // Fire and forget requests for responsiveness
-    Promise.all(unreadIds.map((id: string) =>
-      markOneRead({ variables: { id } }).catch(() => { })
-    )).then(() => {
-      // Optional: fast refetch
+    // Use efficient bulk mutation
+    try {
+      await markListRead({ variables: { ids: unreadIds } });
       refetch();
-    });
+    } catch (e) {
+      console.error("Failed to mark list as read", e);
+      setOptimistic(false); // Revert optimistic state on error
+    }
   }
 
   const handleMarkMachineRead = (e: React.MouseEvent) => handleMarkListAsRead(e, machineNotifications, setOptimisticMachineRead);
