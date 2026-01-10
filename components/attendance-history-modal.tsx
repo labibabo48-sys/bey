@@ -10,6 +10,7 @@ import { format } from "date-fns"
 import { fr } from "date-fns/locale"
 import { cn } from "@/lib/utils"
 import { gql, useLazyQuery } from "@apollo/client"
+import { getCurrentUser } from "@/lib/mock-data"
 import { Loader2, Calendar as CalendarIcon } from "lucide-react"
 
 const GET_USER_HISTORY = gql`
@@ -33,6 +34,8 @@ interface AttendanceHistoryModalProps {
 }
 
 export function AttendanceHistoryModal({ userId, userName, isOpen, onClose }: AttendanceHistoryModalProps) {
+    const currentUser = getCurrentUser()
+    const isAdmin = currentUser?.role === 'admin'
     const [startDate, setStartDate] = useState<Date | undefined>(undefined)
     const [endDate, setEndDate] = useState<Date | undefined>(undefined)
 
@@ -163,7 +166,7 @@ export function AttendanceHistoryModal({ userId, userName, isOpen, onClose }: At
                                         <th className="p-3 text-left font-bold text-[#6b5744] text-[11px] uppercase tracking-wider">Entrée</th>
                                         <th className="p-3 text-left font-bold text-[#6b5744] text-[11px] uppercase tracking-wider">Sortie</th>
                                         <th className="p-3 text-left font-bold text-[#6b5744] text-[11px] uppercase tracking-wider">Shift</th>
-                                        <th className="p-3 text-center font-bold text-[#6b5744] text-[11px] uppercase tracking-wider">Heures</th>
+                                        {isAdmin && <th className="p-3 text-center font-bold text-[#6b5744] text-[11px] uppercase tracking-wider">Heures</th>}
                                         <th className="p-3 text-left font-bold text-[#6b5744] text-[11px] uppercase tracking-wider">Détails (Raw)</th>
                                     </tr>
                                 </thead>
@@ -174,9 +177,11 @@ export function AttendanceHistoryModal({ userId, userName, isOpen, onClose }: At
                                             <td className="p-3 font-bold text-emerald-700">{record.clockIn || "-"}</td>
                                             <td className="p-3 font-bold text-blue-700">{record.clockOut || "-"}</td>
                                             <td className="p-3 text-[#3d2c1e] font-semibold">{record.shift || "-"}</td>
-                                            <td className="p-3 text-center">
-                                                <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">{record.hours || 0}h</span>
-                                            </td>
+                                            {isAdmin && (
+                                                <td className="p-3 text-center">
+                                                    <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">{record.hours || 0}h</span>
+                                                </td>
+                                            )}
                                             <td className="p-3 text-[11px] text-[#6b5744] font-mono break-all max-w-[200px]">
                                                 {record.raw_punches?.join(', ') || "Aucun"}
                                             </td>
@@ -204,10 +209,12 @@ export function AttendanceHistoryModal({ userId, userName, isOpen, onClose }: At
                                             <span className="text-[10px] text-[#6b5744] uppercase font-bold">Sortie</span>
                                             <span className="text-blue-700 font-black text-base">{record.clockOut || "--:--"}</span>
                                         </div>
-                                        <div className="flex flex-col">
-                                            <span className="text-[10px] text-[#6b5744] uppercase font-bold">Heures</span>
-                                            <span className="text-emerald-700 font-black text-base">{record.hours || 0}h</span>
-                                        </div>
+                                        {isAdmin && (
+                                            <div className="flex flex-col">
+                                                <span className="text-[10px] text-[#6b5744] uppercase font-bold">Heures</span>
+                                                <span className="text-emerald-700 font-black text-base">{record.hours || 0}h</span>
+                                            </div>
+                                        )}
                                         <div className="flex flex-col text-right">
                                             <span className="text-[10px] text-[#6b5744] uppercase font-bold">Shift</span>
                                             <span className="text-[#3d2c1e] font-bold">{record.shift || "-"}</span>

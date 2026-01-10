@@ -115,7 +115,6 @@ function AttendanceContent() {
   };
 
   // Permission Logic
-  const currentUser = getCurrentUser();
   let permissions: any = {};
   if (currentUser?.permissions) {
     try { permissions = JSON.parse(currentUser.permissions) || {}; } catch (e) { }
