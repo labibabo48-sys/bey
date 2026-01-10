@@ -240,8 +240,6 @@ export function NotificationBell() {
   });
   const [markOneRead] = useMutation(MARK_ONE_READ);
 
-  if (!canViewNotifications) return null;
-
   const managerNotifications = useMemo(() => managerData?.getNotifications || [], [managerData]);
   const machineNotifications = useMemo(() => machineData?.getNotifications || [], [machineData]);
 
@@ -252,6 +250,8 @@ export function NotificationBell() {
       setOptimisticManagerRead(false);
     }
   }, [managerData, machineData]);
+
+  if (!canViewNotifications) return null;
 
   // New Bulk Mutation
   const [markListRead] = useMutation(gql`
